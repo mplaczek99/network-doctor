@@ -16,6 +16,56 @@ import (
 // rtfUp is the RTF_UP flag in /proc/net/route's Flags column: the route is up.
 const rtfUp = 0x1
 
+// atfCom is the ATF_COM flag in /proc/net/arp's Flags column: a complete entry
+// (we have the gateway's MAC, i.e. we've talked to it at L2).
+const atfCom = 0x2
+
+// zeroMAC is an incomplete/unresolved ARP hardware address.
+const zeroMAC = "00:00:00:00:00:00"
+
+// gatewayReachable reports whether the default gateway has a complete ARP entry
+// — proof of recent L2 contact, without ICMP/raw sockets. No default route or no
+// entry -> (false, nil); an unreadable table -> err.
+func gatewayReachable() (bool, error) {
+	gw, found, err := defaultRoute()
+	if err != nil || !found {
+		return false, err
+	}
+	f, err := os.Open("/proc/net/arp")
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	return parseARPComplete(f, gw)
+}
+
+// parseARPComplete scans /proc/net/arp for ip with ATF_COM set and a non-zero
+// MAC. Never panics; malformed rows are skipped.
+//
+// Columns: IP address  HW type  Flags  HW address  Mask  Device
+func parseARPComplete(r io.Reader, ip string) (bool, error) {
+	sc := bufio.NewScanner(r)
+	headerSkipped := false
+	for sc.Scan() {
+		if !headerSkipped {
+			headerSkipped = true // first line is the column header
+			continue
+		}
+		fields := strings.Fields(sc.Text())
+		if len(fields) < 4 || fields[0] != ip {
+			continue
+		}
+		flags, err := strconv.ParseInt(fields[2], 0, 64) // "0x2"
+		if err != nil {
+			continue
+		}
+		if flags&atfCom != 0 && fields[3] != zeroMAC {
+			return true, nil
+		}
+	}
+	return false, sc.Err()
+}
+
 // defaultRoute opens the kernel IPv4 routing table and returns the gateway of
 // the default route, if any. An open/read error is returned as err; a readable
 // table with no default route is (\"\", false, nil).

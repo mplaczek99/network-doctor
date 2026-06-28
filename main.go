@@ -8,7 +8,11 @@ import (
 )
 
 func main() {
-	p := tea.NewProgram(newModel(checks()))
+	target := ""
+	if len(os.Args) > 1 {
+		target = normalizeTarget(os.Args[1])
+	}
+	p := tea.NewProgram(newModel(checks(target)))
 	final, err := p.Run()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "network-doctor:", err)

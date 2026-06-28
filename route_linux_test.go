@@ -91,6 +91,61 @@ func TestParseDefaultRoute(t *testing.T) {
 	}
 }
 
+const arpHeader = "IP address       HW type     Flags       HW address            Mask     Device\n"
+
+// parseARPComplete: a complete entry (ATF_COM 0x2, non-zero MAC) for the gateway
+// IP is reachable; incomplete flag, zero MAC, or absent IP is not.
+func TestParseARPComplete(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		ip   string
+		want bool
+	}{
+		{
+			name: "complete entry for gateway",
+			in:   arpHeader + "192.168.1.1      0x1         0x2         aa:bb:cc:dd:ee:ff     *        wlan0\n",
+			ip:   "192.168.1.1",
+			want: true,
+		},
+		{
+			name: "incomplete entry (flags 0x0) is not reachable",
+			in:   arpHeader + "192.168.1.1      0x1         0x0         00:00:00:00:00:00     *        wlan0\n",
+			ip:   "192.168.1.1",
+			want: false,
+		},
+		{
+			name: "complete flag but zero MAC is not reachable",
+			in:   arpHeader + "192.168.1.1      0x1         0x2         00:00:00:00:00:00     *        wlan0\n",
+			ip:   "192.168.1.1",
+			want: false,
+		},
+		{
+			name: "gateway IP absent from table",
+			in:   arpHeader + "192.168.1.9      0x1         0x2         aa:bb:cc:dd:ee:ff     *        wlan0\n",
+			ip:   "192.168.1.1",
+			want: false,
+		},
+		{
+			name: "header only",
+			in:   arpHeader,
+			ip:   "192.168.1.1",
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseARPComplete(strings.NewReader(tt.in), tt.ip)
+			if err != nil {
+				t.Fatalf("unexpected err: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 type errReader struct{}
 
 func (errReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }

@@ -53,8 +53,28 @@ go build -o network-doctor .
 ## Usage
 
 ```sh
-network-doctor
+network-doctor              # generic local + internet diagnosis
+network-doctor github.com   # diagnose the path to a specific host
 ```
+
+Given a target, it keeps the local-infra checks (link, IP, route, gateway) and
+then probes the path to that host — DNS, TCP 443, TLS handshake, HTTP response,
+and SSH 22 — so the first ✗ tells you exactly where the path to that host breaks:
+
+```
+✓ Gateway reachable — gateway answered (ARP)
+✓ DNS github.com — github.com → 140.82.112.4
+✓ TCP github.com:443 — github.com:443 open
+✓ TLS github.com — TLS handshake OK
+✓ HTTP github.com — HTTP 200
+✗ SSH github.com:22 — github.com:22 unreachable: ...
+    → Fix: SSH to github.com:22 blocked/refused. Try:
+      ssh -T git@github.com
+      ssh -T -p 443 git@ssh.github.com
+```
+
+A scheme and trailing slash in the argument are stripped (`https://github.com/`
+== `github.com`).
 
 | Key | Action |
 |-----|--------|
