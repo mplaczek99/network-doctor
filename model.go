@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -153,8 +154,8 @@ func (m *model) clearCancel() {
 }
 
 func (m model) View() string {
-	var b []byte
-	b = append(b, "Network Doctor\n\n"...)
+	var b strings.Builder
+	b.WriteString("Network Doctor\n\n")
 	for _, row := range m.rows {
 		var glyph string
 		if row.result == nil {
@@ -168,15 +169,15 @@ func (m model) View() string {
 		if row.result != nil && row.result.Detail != "" {
 			line += " — " + row.result.Detail
 		}
-		b = append(b, line...)
-		b = append(b, '\n')
+		b.WriteString(line)
+		b.WriteByte('\n')
 		if row.result != nil && !row.result.Status && row.result.Fix != "" {
-			b = append(b, faintStyle.Render("    → Fix: "+row.result.Fix)...)
-			b = append(b, '\n')
+			b.WriteString(faintStyle.Render("    → Fix: " + row.result.Fix))
+			b.WriteByte('\n')
 		}
 	}
-	b = append(b, '\n')
-	b = append(b, faintStyle.Render("r: rerun · q: quit")...)
-	b = append(b, '\n')
-	return string(b)
+	b.WriteByte('\n')
+	b.WriteString(faintStyle.Render("r: rerun · q: quit"))
+	b.WriteByte('\n')
+	return b.String()
 }
