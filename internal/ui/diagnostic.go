@@ -11,7 +11,6 @@ type (
 	Target      = diagnostic.Target
 	Proto       = diagnostic.Proto
 	Status      = diagnostic.Status
-	FailClass   = diagnostic.FailClass
 	ProbeID     = diagnostic.ProbeID
 	ProbeResult = diagnostic.ProbeResult
 	Probe       = diagnostic.Probe
@@ -28,14 +27,6 @@ const (
 	StatusFail = diagnostic.StatusFail
 	StatusSkip = diagnostic.StatusSkip
 	StatusNA   = diagnostic.StatusNA
-
-	FailNone    = diagnostic.FailNone
-	FailTimeout = diagnostic.FailTimeout
-	FailRefused = diagnostic.FailRefused
-	FailNoRoute = diagnostic.FailNoRoute
-	FailDNS     = diagnostic.FailDNS
-	FailTLS     = diagnostic.FailTLS
-	FailOther   = diagnostic.FailOther
 
 	pIface     = diagnostic.ProbeIface
 	pInternet  = diagnostic.ProbeInternet

@@ -6,14 +6,12 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/mplaczek99/network-doctor/internal/textsafe"
@@ -46,20 +44,6 @@ func (s Status) String() string {
 	return "?"
 }
 
-// FailClass categorises a failure for the diagnosis engine without parsing
-// display strings.
-type FailClass int
-
-const (
-	FailNone FailClass = iota
-	FailTimeout
-	FailRefused
-	FailNoRoute
-	FailDNS
-	FailTLS
-	FailOther
-)
-
 // Attempt is one connection attempt against a single address.
 type Attempt struct {
 	IP  net.IP
@@ -86,7 +70,6 @@ const (
 type ProbeResult struct {
 	ID         ProbeID
 	Status     Status
-	Fail       FailClass
 	Addrs      []net.IP // DNS publishes all A records here
 	SelectedIP net.IP   // Target TCP publishes the pinned IP
 	Source     net.IP
@@ -164,7 +147,7 @@ func ifaceProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
 	r := ProbeResult{ID: ProbeIface}
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		r.Status, r.Fail = StatusFail, FailOther
+		r.Status = StatusFail
 		r.Detail, r.Fix = "cannot list interfaces: "+err.Error(), "check permissions / network stack"
 		return r
 	}
@@ -177,7 +160,7 @@ func ifaceProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
 			return r
 		}
 	}
-	r.Status, r.Fail = StatusFail, FailNoRoute
+	r.Status = StatusFail
 	r.Detail, r.Fix = "no interface up", "bring up an interface (cable/Wi-Fi) or `ip link set <iface> up`"
 	return r
 }
@@ -197,7 +180,7 @@ func internetProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
 		return r
 	}
 	src, iface := pathIdentity(nil, internetEndpoints[0], 443)
-	r.Status, r.Fail, r.Source, r.Iface = StatusFail, classify(lastErr(attempts)), src, iface
+	r.Status, r.Source, r.Iface = StatusFail, src, iface
 	r.Detail = "no direct TCP egress to 1.1.1.1/8.8.8.8:443"
 	r.Fix = "no internet egress — proxy-only/filtered network? check upstream"
 	return r
@@ -213,13 +196,13 @@ func dnsProbe(host string, literal bool, litIP net.IP) func(context.Context, map
 		}
 		ips, err := net.DefaultResolver.LookupIP(ctx, "ip4", host)
 		if err != nil {
-			r.Status, r.Fail = StatusFail, FailDNS
+			r.Status = StatusFail
 			r.Detail = "cannot resolve " + host + ": " + textsafe.Clean(err.Error())
 			r.Fix = "name resolution failing — check /etc/resolv.conf / DNS"
 			return r
 		}
 		if len(ips) == 0 {
-			r.Status, r.Fail = StatusFail, FailDNS
+			r.Status = StatusFail
 			r.Detail, r.Fix = "no A record for "+host, "no IPv4 address returned — check the hostname / DNS"
 			return r
 		}
@@ -234,7 +217,7 @@ func targetTCPProbe(port int) func(context.Context, map[ProbeID]ProbeResult) Pro
 		r := ProbeResult{ID: ProbeTargetTCP}
 		addrs := deps[ProbeDNS].Addrs
 		if len(addrs) == 0 {
-			r.Status, r.Fail, r.Detail = StatusFail, FailDNS, "no resolved addresses"
+			r.Status, r.Detail = StatusFail, "no resolved addresses"
 			return r
 		}
 		conn, sel, attempts, rtt := dialIPs(ctx, addrs, port)
@@ -248,7 +231,7 @@ func targetTCPProbe(port int) func(context.Context, map[ProbeID]ProbeResult) Pro
 		}
 		// All addresses failed: deterministic fallback path = first address.
 		src, iface := pathIdentity(nil, addrs[0], port)
-		r.Status, r.Fail, r.Source, r.Iface = StatusFail, classify(lastErr(attempts)), src, iface
+		r.Status, r.Source, r.Iface = StatusFail, src, iface
 		r.Detail = fmt.Sprintf("port %d unreachable on all %d address(es)", port, len(addrs))
 		r.Fix = fmt.Sprintf("port %d blocked/refused — firewall, wrong network, or VPN routing?", port)
 		return r
@@ -266,7 +249,7 @@ func tlsProbe(host string, port int) func(context.Context, map[ProbeID]ProbeResu
 		d := tls.Dialer{NetDialer: &net.Dialer{}, Config: &tls.Config{ServerName: host}}
 		conn, err := d.DialContext(ctx, "tcp4", net.JoinHostPort(ip.String(), strconv.Itoa(port)))
 		if err != nil {
-			r.Status, r.Fail = StatusFail, FailTLS
+			r.Status = StatusFail
 			r.Detail = "TLS handshake failed: " + textsafe.Clean(err.Error())
 			r.Fix = "TLS broken — clock skew, bad/expired cert, or MITM proxy?"
 			return r
@@ -305,12 +288,12 @@ func httpProbe(host string, port int, scheme string) func(context.Context, map[P
 		url := scheme + "://" + net.JoinHostPort(host, strconv.Itoa(port))
 		req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
 		if err != nil {
-			r.Status, r.Fail, r.Detail = StatusFail, FailOther, "cannot build request: "+err.Error()
+			r.Status, r.Detail = StatusFail, "cannot build request: "+err.Error()
 			return r
 		}
 		resp, err := client.Do(req)
 		if err != nil {
-			r.Status, r.Fail = StatusFail, classify(err)
+			r.Status = StatusFail
 			r.Detail, r.Fix = "no HTTP response: "+textsafe.Clean(err.Error()), "HTTP blocked — proxy or firewall?"
 			return r
 		}
@@ -332,7 +315,7 @@ func bannerProbe(id ProbeID, label string, port int) Probe {
 		var d net.Dialer
 		conn, err := d.DialContext(ctx, "tcp4", net.JoinHostPort(ip.String(), strconv.Itoa(port)))
 		if err != nil {
-			r.Status, r.Fail, r.Detail = StatusFail, classify(err), "connect failed: "+textsafe.Clean(err.Error())
+			r.Status, r.Detail = StatusFail, "connect failed: "+textsafe.Clean(err.Error())
 			return r
 		}
 		defer conn.Close()
@@ -443,30 +426,6 @@ func ifaceForIP(ip net.IP) string {
 	default:
 		return name
 	}
-}
-
-func classify(err error) FailClass {
-	switch {
-	case err == nil:
-		return FailNone
-	case errors.Is(err, context.DeadlineExceeded):
-		return FailTimeout
-	case errors.Is(err, syscall.ECONNREFUSED):
-		return FailRefused
-	case errors.Is(err, syscall.ENETUNREACH), errors.Is(err, syscall.EHOSTUNREACH), errors.Is(err, syscall.ENETDOWN):
-		return FailNoRoute
-	default:
-		return FailOther
-	}
-}
-
-func lastErr(attempts []Attempt) error {
-	for i := len(attempts) - 1; i >= 0; i-- {
-		if attempts[i].Err != nil {
-			return attempts[i].Err
-		}
-	}
-	return nil
 }
 
 func joinIPs(ips []net.IP) string {
