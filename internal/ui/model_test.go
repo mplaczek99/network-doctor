@@ -120,17 +120,17 @@ func TestSelectionClamp(t *testing.T) {
 
 func TestExitCode(t *testing.T) {
 	m := newModel(nil)
-	if exitCode(m) != 1 {
+	if ExitCode(m) != 1 {
 		t.Error("unfinished chain must exit 1")
 	}
 	for _, id := range m.order {
 		m.results[id] = ProbeResult{Status: StatusPass}
 	}
-	if exitCode(m) != 0 {
+	if ExitCode(m) != 0 {
 		t.Error("all-pass must exit 0")
 	}
 	m.results[pDNS] = ProbeResult{Status: StatusFail}
-	if exitCode(m) != 1 {
+	if ExitCode(m) != 1 {
 		t.Error("a fail must exit 1")
 	}
 }

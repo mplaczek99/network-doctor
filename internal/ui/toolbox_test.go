@@ -31,7 +31,7 @@ func TestToolHotkeysUnique(t *testing.T) {
 func TestToolboxExitZero(t *testing.T) {
 	m := newModel(nil)
 	m.toolbox = true
-	if exitCode(m) != 0 {
+	if ExitCode(m) != 0 {
 		t.Error("toolbox mode, no chain run, must exit 0")
 	}
 	// Once the chain runs and a probe fails, normal rules apply.
@@ -40,7 +40,7 @@ func TestToolboxExitZero(t *testing.T) {
 		m.results[id] = ProbeResult{Status: StatusPass}
 	}
 	m.results[pDNS] = ProbeResult{Status: StatusFail}
-	if exitCode(m) != 1 {
+	if ExitCode(m) != 1 {
 		t.Error("toolbox mode after a failed chain must exit 1")
 	}
 }
