@@ -66,14 +66,6 @@ func (m model) Init() tea.Cmd {
 	return func() tea.Msg { return startCheckMsg{idx: 0, gen: 0} }
 }
 
-// runCheck runs a check under ctx and reports the result. It reads ctx but
-// never writes model state.
-func runCheck(ctx context.Context, c Check, idx, gen int) tea.Cmd {
-	return func() tea.Msg {
-		return checkDoneMsg{idx: idx, gen: gen, res: c.Run(ctx)}
-	}
-}
-
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
@@ -115,7 +107,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		wasRunning := m.running
 		m.running = true
 
-		cmds := []tea.Cmd{runCheck(ctx, m.rows[msg.idx].check, msg.idx, m.generation)}
+		cmds := []tea.Cmd{func() tea.Msg {
+			return checkDoneMsg{idx: msg.idx, gen: m.generation, res: m.rows[msg.idx].check.Run(ctx)}
+		}}
 		if !wasRunning {
 			cmds = append(cmds, m.spinner.Tick) // seed exactly one tick on idle->running
 		}
