@@ -1,4 +1,4 @@
-package main
+package textsafe
 
 import (
 	"strings"
@@ -34,9 +34,9 @@ func TestSanitize(t *testing.T) {
 		"\xff\xfe invalid utf8",
 	}
 	for _, in := range cases {
-		noControl(t, in, sanitize(in))
+		noControl(t, in, Clean(in))
 	}
-	if got := sanitize("\x1b[31mhello\x1b[0m"); got != "hello" {
+	if got := Clean("\x1b[31mhello\x1b[0m"); got != "hello" {
 		t.Errorf("escape strip = %q, want %q", got, "hello")
 	}
 }
@@ -46,6 +46,6 @@ func FuzzSanitize(f *testing.F) {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, s string) {
-		noControl(t, s, sanitize(s))
+		noControl(t, s, Clean(s))
 	})
 }

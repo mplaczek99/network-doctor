@@ -1,4 +1,6 @@
-package main
+// Package diagnostic implements target parsing, native network probes, and
+// diagnosis without depending on terminal presentation.
+package diagnostic
 
 import (
 	"bufio"
@@ -13,6 +15,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/mplaczek99/network-doctor/internal/textsafe"
 )
 
 // Status is a probe's four-state outcome. Skip = a prerequisite failed (an
@@ -67,14 +71,14 @@ type Attempt struct {
 type ProbeID string
 
 const (
-	pIface     ProbeID = "iface"
-	pInternet  ProbeID = "internet_tcp"
-	pDNS       ProbeID = "dns"
-	pTargetTCP ProbeID = "target_tcp"
-	pTLS       ProbeID = "tls"
-	pHTTP      ProbeID = "http"
-	pSSH       ProbeID = "ssh_banner"
-	pSMTP      ProbeID = "smtp_banner"
+	ProbeIface     ProbeID = "iface"
+	ProbeInternet  ProbeID = "internet_tcp"
+	ProbeDNS       ProbeID = "dns"
+	ProbeTargetTCP ProbeID = "target_tcp"
+	ProbeTLS       ProbeID = "tls"
+	ProbeHTTP      ProbeID = "http"
+	ProbeSSH       ProbeID = "ssh_banner"
+	ProbeSMTP      ProbeID = "smtp_banner"
 )
 
 // ProbeResult is the typed contract the diagnosis engine and renderer consume.
@@ -103,8 +107,8 @@ type Probe struct {
 }
 
 const (
-	// probeTimeout bounds a single probe (the model wraps each in a child ctx).
-	probeTimeout = 4 * time.Second
+	// ProbeTimeout bounds a single probe (the model wraps each in a child ctx).
+	ProbeTimeout = 4 * time.Second
 	// minBudget floors the per-address dial budget so a many-A-record host
 	// doesn't shrink each attempt to nothing.
 	minBudget = 700 * time.Millisecond
@@ -119,37 +123,37 @@ const probeHost = "connectivitycheck.gstatic.com"
 // wins. Honestly "direct TCP egress" — proxy-only networks can fail this.
 var internetEndpoints = []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("8.8.8.8")}
 
-// buildProbes constructs the DAG for the given target (nil = generic mode).
-func buildProbes(t *Target) []Probe {
-	iface := Probe{ID: pIface, Name: "Interface", Run: ifaceProbe}
-	internet := Probe{ID: pInternet, Name: "Internet (TCP egress)", Deps: []ProbeID{pIface}, Run: internetProbe}
+// BuildProbes constructs the DAG for the given target (nil = generic mode).
+func BuildProbes(t *Target) []Probe {
+	iface := Probe{ID: ProbeIface, Name: "Interface", Run: ifaceProbe}
+	internet := Probe{ID: ProbeInternet, Name: "Internet (TCP egress)", Deps: []ProbeID{ProbeIface}, Run: internetProbe}
 
 	if t == nil {
 		// Egress and DNS are siblings: each depends only on the interface, so an
 		// egress failure never hides a DNS failure (or vice-versa).
-		dns := Probe{ID: pDNS, Name: "DNS", Deps: []ProbeID{pIface}, Run: dnsProbe(probeHost, false, nil)}
+		dns := Probe{ID: ProbeDNS, Name: "DNS", Deps: []ProbeID{ProbeIface}, Run: dnsProbe(probeHost, false, nil)}
 		return []Probe{iface, internet, dns}
 	}
 
 	host, port := t.Host, t.Port
-	dns := Probe{ID: pDNS, Name: "DNS " + host, Deps: []ProbeID{pIface}, Run: dnsProbe(host, t.IsLiteral, t.IP)}
-	ttcp := Probe{ID: pTargetTCP, Name: fmt.Sprintf("TCP %s:%d", host, port), Deps: []ProbeID{pDNS}, Run: targetTCPProbe(port)}
+	dns := Probe{ID: ProbeDNS, Name: "DNS " + host, Deps: []ProbeID{ProbeIface}, Run: dnsProbe(host, t.IsLiteral, t.IP)}
+	ttcp := Probe{ID: ProbeTargetTCP, Name: fmt.Sprintf("TCP %s:%d", host, port), Deps: []ProbeID{ProbeDNS}, Run: targetTCPProbe(port)}
 	probes := []Probe{iface, internet, dns, ttcp}
 
 	switch t.Proto {
 	case ProtoTLSHTTP:
 		probes = append(probes,
-			Probe{ID: pTLS, Name: "TLS " + host, Deps: []ProbeID{pTargetTCP}, Run: tlsProbe(host, port)},
-			Probe{ID: pHTTP, Name: "HTTP " + host, Deps: []ProbeID{pTargetTCP}, Run: httpProbe(host, port, "https")},
+			Probe{ID: ProbeTLS, Name: "TLS " + host, Deps: []ProbeID{ProbeTargetTCP}, Run: tlsProbe(host, port)},
+			Probe{ID: ProbeHTTP, Name: "HTTP " + host, Deps: []ProbeID{ProbeTargetTCP}, Run: httpProbe(host, port, "https")},
 		)
 	case ProtoHTTP:
 		probes = append(probes,
-			Probe{ID: pHTTP, Name: "HTTP " + host, Deps: []ProbeID{pTargetTCP}, Run: httpProbe(host, port, "http")},
+			Probe{ID: ProbeHTTP, Name: "HTTP " + host, Deps: []ProbeID{ProbeTargetTCP}, Run: httpProbe(host, port, "http")},
 		)
 	case ProtoSSH:
-		probes = append(probes, bannerProbe(pSSH, fmt.Sprintf("SSH banner %s:%d", host, port), port))
+		probes = append(probes, bannerProbe(ProbeSSH, fmt.Sprintf("SSH banner %s:%d", host, port), port))
 	case ProtoSMTP:
-		probes = append(probes, bannerProbe(pSMTP, fmt.Sprintf("SMTP banner %s:%d", host, port), port))
+		probes = append(probes, bannerProbe(ProbeSMTP, fmt.Sprintf("SMTP banner %s:%d", host, port), port))
 	}
 	return probes
 }
@@ -157,7 +161,7 @@ func buildProbes(t *Target) []Probe {
 // ---- probe implementations ----
 
 func ifaceProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
-	r := ProbeResult{ID: pIface}
+	r := ProbeResult{ID: ProbeIface}
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		r.Status, r.Fail = StatusFail, FailOther
@@ -179,7 +183,7 @@ func ifaceProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
 }
 
 func internetProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
-	r := ProbeResult{ID: pInternet}
+	r := ProbeResult{ID: ProbeInternet}
 	conn, sel, attempts, rtt := dialIPs(ctx, internetEndpoints, 443)
 	r.Attempts, r.RTT = attempts, rtt
 	if conn != nil {
@@ -201,7 +205,7 @@ func internetProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
 
 func dnsProbe(host string, literal bool, litIP net.IP) func(context.Context, map[ProbeID]ProbeResult) ProbeResult {
 	return func(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
-		r := ProbeResult{ID: pDNS}
+		r := ProbeResult{ID: ProbeDNS}
 		if literal {
 			r.Status, r.Addrs, r.SelectedIP = StatusNA, []net.IP{litIP}, litIP
 			r.Detail = "literal IP " + litIP.String() + " — no DNS needed"
@@ -210,7 +214,7 @@ func dnsProbe(host string, literal bool, litIP net.IP) func(context.Context, map
 		ips, err := net.DefaultResolver.LookupIP(ctx, "ip4", host)
 		if err != nil {
 			r.Status, r.Fail = StatusFail, FailDNS
-			r.Detail = "cannot resolve " + host + ": " + sanitize(err.Error())
+			r.Detail = "cannot resolve " + host + ": " + textsafe.Clean(err.Error())
 			r.Fix = "name resolution failing — check /etc/resolv.conf / DNS"
 			return r
 		}
@@ -227,8 +231,8 @@ func dnsProbe(host string, literal bool, litIP net.IP) func(context.Context, map
 
 func targetTCPProbe(port int) func(context.Context, map[ProbeID]ProbeResult) ProbeResult {
 	return func(ctx context.Context, deps map[ProbeID]ProbeResult) ProbeResult {
-		r := ProbeResult{ID: pTargetTCP}
-		addrs := deps[pDNS].Addrs
+		r := ProbeResult{ID: ProbeTargetTCP}
+		addrs := deps[ProbeDNS].Addrs
 		if len(addrs) == 0 {
 			r.Status, r.Fail, r.Detail = StatusFail, FailDNS, "no resolved addresses"
 			return r
@@ -253,8 +257,8 @@ func targetTCPProbe(port int) func(context.Context, map[ProbeID]ProbeResult) Pro
 
 func tlsProbe(host string, port int) func(context.Context, map[ProbeID]ProbeResult) ProbeResult {
 	return func(ctx context.Context, deps map[ProbeID]ProbeResult) ProbeResult {
-		r := ProbeResult{ID: pTLS}
-		ip := deps[pTargetTCP].SelectedIP
+		r := ProbeResult{ID: ProbeTLS}
+		ip := deps[ProbeTargetTCP].SelectedIP
 		if ip == nil {
 			r.Status, r.Detail = StatusSkip, "no pinned IP from Target TCP"
 			return r
@@ -263,7 +267,7 @@ func tlsProbe(host string, port int) func(context.Context, map[ProbeID]ProbeResu
 		conn, err := d.DialContext(ctx, "tcp4", net.JoinHostPort(ip.String(), strconv.Itoa(port)))
 		if err != nil {
 			r.Status, r.Fail = StatusFail, FailTLS
-			r.Detail = "TLS handshake failed: " + sanitize(err.Error())
+			r.Detail = "TLS handshake failed: " + textsafe.Clean(err.Error())
 			r.Fix = "TLS broken — clock skew, bad/expired cert, or MITM proxy?"
 			return r
 		}
@@ -275,8 +279,8 @@ func tlsProbe(host string, port int) func(context.Context, map[ProbeID]ProbeResu
 
 func httpProbe(host string, port int, scheme string) func(context.Context, map[ProbeID]ProbeResult) ProbeResult {
 	return func(ctx context.Context, deps map[ProbeID]ProbeResult) ProbeResult {
-		r := ProbeResult{ID: pHTTP}
-		ip := deps[pTargetTCP].SelectedIP
+		r := ProbeResult{ID: ProbeHTTP}
+		ip := deps[ProbeTargetTCP].SelectedIP
 		if ip == nil {
 			r.Status, r.Detail = StatusSkip, "no pinned IP from Target TCP"
 			return r
@@ -307,7 +311,7 @@ func httpProbe(host string, port int, scheme string) func(context.Context, map[P
 		resp, err := client.Do(req)
 		if err != nil {
 			r.Status, r.Fail = StatusFail, classify(err)
-			r.Detail, r.Fix = "no HTTP response: "+sanitize(err.Error()), "HTTP blocked — proxy or firewall?"
+			r.Detail, r.Fix = "no HTTP response: "+textsafe.Clean(err.Error()), "HTTP blocked — proxy or firewall?"
 			return r
 		}
 		resp.Body.Close()
@@ -318,9 +322,9 @@ func httpProbe(host string, port int, scheme string) func(context.Context, map[P
 }
 
 func bannerProbe(id ProbeID, label string, port int) Probe {
-	return Probe{ID: id, Name: label, Deps: []ProbeID{pTargetTCP}, Run: func(ctx context.Context, deps map[ProbeID]ProbeResult) ProbeResult {
+	return Probe{ID: id, Name: label, Deps: []ProbeID{ProbeTargetTCP}, Run: func(ctx context.Context, deps map[ProbeID]ProbeResult) ProbeResult {
 		r := ProbeResult{ID: id}
-		ip := deps[pTargetTCP].SelectedIP
+		ip := deps[ProbeTargetTCP].SelectedIP
 		if ip == nil {
 			r.Status, r.Detail = StatusSkip, "no pinned IP from Target TCP"
 			return r
@@ -328,7 +332,7 @@ func bannerProbe(id ProbeID, label string, port int) Probe {
 		var d net.Dialer
 		conn, err := d.DialContext(ctx, "tcp4", net.JoinHostPort(ip.String(), strconv.Itoa(port)))
 		if err != nil {
-			r.Status, r.Fail, r.Detail = StatusFail, classify(err), "connect failed: "+sanitize(err.Error())
+			r.Status, r.Fail, r.Detail = StatusFail, classify(err), "connect failed: "+textsafe.Clean(err.Error())
 			return r
 		}
 		defer conn.Close()
@@ -342,7 +346,7 @@ func bannerProbe(id ProbeID, label string, port int) Probe {
 		if line == "" {
 			r.Detail = "connected, no banner within deadline"
 		} else {
-			r.Detail = "banner: " + sanitize(line)
+			r.Detail = "banner: " + textsafe.Clean(line)
 		}
 		return r
 	}}
@@ -473,7 +477,7 @@ func joinIPs(ips []net.IP) string {
 	return strings.Join(parts, ", ")
 }
 
-// remaining returns the time left on ctx's deadline, or probeTimeout if none.
+// remaining returns the time left on ctx's deadline, or ProbeTimeout if none.
 func remaining(ctx context.Context) time.Duration {
 	if dl, ok := ctx.Deadline(); ok {
 		if d := time.Until(dl); d > 0 {
@@ -481,5 +485,5 @@ func remaining(ctx context.Context) time.Duration {
 		}
 		return 0
 	}
-	return probeTimeout
+	return ProbeTimeout
 }

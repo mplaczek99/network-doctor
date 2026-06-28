@@ -1,4 +1,4 @@
-package main
+package diagnostic
 
 import "testing"
 
@@ -24,7 +24,7 @@ func TestParseTarget(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
-			tg, err := parseTarget(c.in)
+			tg, err := ParseTarget(c.in)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -47,8 +47,8 @@ func TestParseTarget(t *testing.T) {
 func TestParseTargetErrors(t *testing.T) {
 	bad := []string{"", "::1", "[::1]:443", "host:0", "host:99999", "ftp://host", "bad_host!", "fe80::1"}
 	for _, in := range bad {
-		if tg, err := parseTarget(in); err == nil {
-			t.Errorf("parseTarget(%q) = %+v, want error", in, tg)
+		if tg, err := ParseTarget(in); err == nil {
+			t.Errorf("ParseTarget(%q) = %+v, want error", in, tg)
 		}
 	}
 }

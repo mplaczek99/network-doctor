@@ -5,6 +5,7 @@
 graphify-out/
 
 # AI Stuff
-.claude
+.codex/
+.claude/
 CLAUDE.md
 AGENTS.md

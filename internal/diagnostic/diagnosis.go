@@ -1,11 +1,11 @@
-package main
+package diagnostic
 
 import "fmt"
 
-// diagnose computes the plain-English verdict from current-generation native
+// Diagnose computes the plain-English verdict from current-generation native
 // probe state only (tool facts never feed in). First-fail ordering + combination
 // rules. Returns "Running diagnostics…" until every probe in order has a result.
-func diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
+func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 	for _, id := range order {
 		if _, ok := res[id]; !ok {
 			return "Running diagnostics…"
@@ -15,12 +15,12 @@ func diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 	fail := func(id ProbeID) bool { return res[id].Status == StatusFail }
 	has := func(id ProbeID) bool { _, ok := res[id]; return ok }
 
-	if fail(pIface) {
+	if fail(ProbeIface) {
 		return "No usable network interface — the link is down."
 	}
 
 	if t == nil {
-		ip, dn := pass(pInternet), pass(pDNS)
+		ip, dn := pass(ProbeInternet), pass(ProbeDNS)
 		switch {
 		case ip && dn:
 			return "Online — direct TCP egress and DNS both work."
@@ -36,22 +36,22 @@ func diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 	host := t.Host
 	hp := fmt.Sprintf("%s:%d", host, t.Port)
 	switch {
-	case fail(pDNS):
+	case fail(ProbeDNS):
 		v := "Cannot resolve " + host + " — DNS failure."
-		if pass(pInternet) {
+		if pass(ProbeInternet) {
 			v += " (The general internet is reachable.)"
 		}
 		return v
-	case fail(pTargetTCP):
-		if pass(pInternet) {
+	case fail(ProbeTargetTCP):
+		if pass(ProbeInternet) {
 			return hp + " is unreachable though DNS and the general internet work — remote port closed, firewall, or VPN routing."
 		}
 		return host + " resolves but neither it nor the general internet is reachable — local egress problem."
-	case has(pTLS) && fail(pTLS):
+	case has(ProbeTLS) && fail(ProbeTLS):
 		return "TCP reaches " + hp + " but the TLS handshake fails — bad/expired cert, clock skew, or MITM proxy."
-	case has(pHTTP) && fail(pHTTP):
+	case has(ProbeHTTP) && fail(ProbeHTTP):
 		return "TLS is fine but no HTTP response from " + hp + " — application-layer or proxy block."
-	case (has(pSSH) && fail(pSSH)) || (has(pSMTP) && fail(pSMTP)):
+	case (has(ProbeSSH) && fail(ProbeSSH)) || (has(ProbeSMTP) && fail(ProbeSMTP)):
 		return hp + " accepts TCP but the service banner check failed."
 	default:
 		return hp + " is reachable and responding."

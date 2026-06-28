@@ -1,4 +1,5 @@
-package main
+// Package textsafe removes terminal control sequences from untrusted text.
+package textsafe
 
 import (
 	"regexp"
@@ -18,7 +19,7 @@ var escapeRe = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(
 // in the control range (incl. lone ESC, C1, newlines) and invalid UTF-8 is
 // dropped. ponytail: single-line oriented — keep newlines too when multi-line
 // tool output lands in Phase 2.
-func sanitize(s string) string {
+func Clean(s string) string {
 	s = escapeRe.ReplaceAllString(s, "")
 	return strings.Map(func(r rune) rune {
 		switch {

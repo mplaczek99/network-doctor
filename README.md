@@ -150,3 +150,18 @@ go test ./...          # unit + DAG scheduler + parser + diagnosis
 go test -race ./...    # concurrency
 go test -fuzz=FuzzSanitize -fuzztime=10s   # terminal-escape sanitizer
 ```
+
+## Development
+
+The code is split by responsibility:
+
+- `main.go` owns CLI arguments, process I/O, and application startup.
+- `internal/diagnostic` owns target parsing, native probes, Linux route data,
+  and verdict logic without depending on terminal presentation.
+- `internal/ui` owns Bubble Tea state, rendering, tool jobs, and report export.
+- `internal/textsafe` sanitizes untrusted remote and subprocess text shared by
+  both layers.
+
+The UI depends on diagnostics; diagnostics do not depend on the UI. Add network
+semantics under `internal/diagnostic` and interaction or rendering behavior under
+`internal/ui`.

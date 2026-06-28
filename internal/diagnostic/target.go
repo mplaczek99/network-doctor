@@ -1,4 +1,4 @@
-package main
+package diagnostic
 
 import (
 	"errors"
@@ -39,10 +39,10 @@ type Target struct {
 // so nothing user-supplied is ever fed to a probe or (later) a command.
 var hostnameRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$`)
 
-// parseTarget parses a CLI target: <host> | <host>:<port> | http(s)://<host>[:port][/path].
+// ParseTarget parses a CLI target: <host> | <host>:<port> | http(s)://<host>[:port][/path].
 // IPv6 literals are rejected (out of scope). Returns a typed Target or an error
 // (caller exits 2 on error).
-func parseTarget(raw string) (*Target, error) {
+func ParseTarget(raw string) (*Target, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
 		return nil, errors.New("empty target")

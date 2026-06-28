@@ -1,4 +1,4 @@
-package main
+package diagnostic
 
 import (
 	"strings"
@@ -6,7 +6,7 @@ import (
 )
 
 func TestDiagnoseGeneric(t *testing.T) {
-	order := []ProbeID{pIface, pInternet, pDNS}
+	order := []ProbeID{ProbeIface, ProbeInternet, ProbeDNS}
 	cases := []struct {
 		name          string
 		internet, dns Status
@@ -20,11 +20,11 @@ func TestDiagnoseGeneric(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			res := map[ProbeID]ProbeResult{
-				pIface:    {Status: StatusPass},
-				pInternet: {Status: c.internet},
-				pDNS:      {Status: c.dns},
+				ProbeIface:    {Status: StatusPass},
+				ProbeInternet: {Status: c.internet},
+				ProbeDNS:      {Status: c.dns},
 			}
-			if v := diagnose(nil, order, res); !strings.Contains(v, c.want) {
+			if v := Diagnose(nil, order, res); !strings.Contains(v, c.want) {
 				t.Errorf("got %q, want substring %q", v, c.want)
 			}
 		})
@@ -32,24 +32,24 @@ func TestDiagnoseGeneric(t *testing.T) {
 }
 
 func TestDiagnoseIncomplete(t *testing.T) {
-	order := []ProbeID{pIface, pInternet, pDNS}
-	res := map[ProbeID]ProbeResult{pIface: {Status: StatusPass}}
-	if v := diagnose(nil, order, res); !strings.Contains(v, "Running") {
+	order := []ProbeID{ProbeIface, ProbeInternet, ProbeDNS}
+	res := map[ProbeID]ProbeResult{ProbeIface: {Status: StatusPass}}
+	if v := Diagnose(nil, order, res); !strings.Contains(v, "Running") {
 		t.Errorf("incomplete should report running, got %q", v)
 	}
 }
 
 func TestDiagnoseTarget(t *testing.T) {
 	tg := mustTarget(t, "github.com")
-	order := []ProbeID{pIface, pInternet, pDNS, pTargetTCP, pTLS, pHTTP}
+	order := []ProbeID{ProbeIface, ProbeInternet, ProbeDNS, ProbeTargetTCP, ProbeTLS, ProbeHTTP}
 
 	// DNS + internet OK, Target TCP fails → remote port/firewall verdict.
 	res := map[ProbeID]ProbeResult{
-		pIface: {Status: StatusPass}, pInternet: {Status: StatusPass},
-		pDNS: {Status: StatusPass}, pTargetTCP: {Status: StatusFail},
-		pTLS: {Status: StatusSkip}, pHTTP: {Status: StatusSkip},
+		ProbeIface: {Status: StatusPass}, ProbeInternet: {Status: StatusPass},
+		ProbeDNS: {Status: StatusPass}, ProbeTargetTCP: {Status: StatusFail},
+		ProbeTLS: {Status: StatusSkip}, ProbeHTTP: {Status: StatusSkip},
 	}
-	if v := diagnose(tg, order, res); !strings.Contains(v, "unreachable") {
+	if v := Diagnose(tg, order, res); !strings.Contains(v, "unreachable") {
 		t.Errorf("got %q, want 'unreachable'", v)
 	}
 
@@ -57,7 +57,7 @@ func TestDiagnoseTarget(t *testing.T) {
 	for _, id := range order {
 		res[id] = ProbeResult{Status: StatusPass}
 	}
-	if v := diagnose(tg, order, res); !strings.Contains(v, "reachable and responding") {
+	if v := Diagnose(tg, order, res); !strings.Contains(v, "reachable and responding") {
 		t.Errorf("got %q, want success verdict", v)
 	}
 }
