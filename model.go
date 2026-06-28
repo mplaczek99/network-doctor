@@ -44,10 +44,9 @@ type model struct {
 }
 
 var (
-	passStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	failStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-	fixStyle  = lipgloss.NewStyle().Faint(true)
-	hintStyle = lipgloss.NewStyle().Faint(true)
+	passStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	failStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	faintStyle = lipgloss.NewStyle().Faint(true)
 )
 
 func newModel(cs []Check) model {
@@ -179,12 +178,12 @@ func (m model) View() string {
 		b = append(b, line...)
 		b = append(b, '\n')
 		if row.result != nil && row.result.Status == Fail && row.result.Fix != "" {
-			b = append(b, fixStyle.Render("    → Fix: "+row.result.Fix)...)
+			b = append(b, faintStyle.Render("    → Fix: "+row.result.Fix)...)
 			b = append(b, '\n')
 		}
 	}
 	b = append(b, '\n')
-	b = append(b, hintStyle.Render("r: rerun · q: quit")...)
+	b = append(b, faintStyle.Render("r: rerun · q: quit")...)
 	b = append(b, '\n')
 	return string(b)
 }
