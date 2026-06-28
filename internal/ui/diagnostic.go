@@ -17,11 +17,7 @@ type (
 )
 
 const (
-	ProtoNone    = diagnostic.ProtoNone
-	ProtoTLSHTTP = diagnostic.ProtoTLSHTTP
-	ProtoHTTP    = diagnostic.ProtoHTTP
-	ProtoSSH     = diagnostic.ProtoSSH
-	ProtoSMTP    = diagnostic.ProtoSMTP
+	ProtoHTTP = diagnostic.ProtoHTTP
 
 	StatusPass = diagnostic.StatusPass
 	StatusFail = diagnostic.StatusFail
@@ -34,8 +30,6 @@ const (
 	pTargetTCP = diagnostic.ProbeTargetTCP
 	pTLS       = diagnostic.ProbeTLS
 	pHTTP      = diagnostic.ProbeHTTP
-	pSSH       = diagnostic.ProbeSSH
-	pSMTP      = diagnostic.ProbeSMTP
 
 	probeTimeout = diagnostic.ProbeTimeout
 )
