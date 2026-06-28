@@ -31,7 +31,6 @@ type Target struct {
 	Proto        Proto
 	PortExplicit bool
 	IsLiteral    bool
-	Raw          string
 }
 
 // hostnameRe is a strict RFC-1123-ish hostname allowlist (labels of
@@ -47,7 +46,7 @@ func ParseTarget(raw string) (*Target, error) {
 	if s == "" {
 		return nil, errors.New("empty target")
 	}
-	t := &Target{Raw: raw}
+	t := &Target{}
 
 	if i := strings.Index(s, "://"); i >= 0 {
 		t.Scheme = strings.ToLower(s[:i])

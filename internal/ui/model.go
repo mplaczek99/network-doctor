@@ -28,8 +28,7 @@ type probeDoneMsg struct {
 type pendingKind int
 
 const (
-	pendNone pendingKind = iota
-	pendQuit
+	pendQuit pendingKind = iota
 	pendRerun
 	pendTool
 )
