@@ -41,23 +41,23 @@ func TestDiagnoseIncomplete(t *testing.T) {
 
 func TestDiagnoseTarget(t *testing.T) {
 	tg := mustTarget(t, "github.com")
-	order := []ProbeID{ProbeIface, ProbeInternet, ProbeDNS, ProbeTargetTCP, ProbeTLS, ProbeHTTP}
+	order := []ProbeID{ProbeIface, ProbeInternet, ProbeDNS, ProbeTargetTCP, ProbeTLS, ProbeHTTP, ProbeHTTPS}
 
 	// DNS + internet OK, Target TCP fails → remote port/firewall verdict.
 	res := map[ProbeID]ProbeResult{
 		ProbeIface: {Status: StatusPass}, ProbeInternet: {Status: StatusPass},
 		ProbeDNS: {Status: StatusPass}, ProbeTargetTCP: {Status: StatusFail},
-		ProbeTLS: {Status: StatusSkip}, ProbeHTTP: {Status: StatusSkip},
+		ProbeTLS: {Status: StatusSkip}, ProbeHTTP: {Status: StatusPass}, ProbeHTTPS: {Status: StatusSkip},
 	}
 	if v := Diagnose(tg, order, res); !strings.Contains(v, "unreachable") {
 		t.Errorf("got %q, want 'unreachable'", v)
 	}
 
-	// Everything passes → reachable.
+	// Everything passes → the probe rows are sufficient; no redundant summary.
 	for _, id := range order {
 		res[id] = ProbeResult{Status: StatusPass}
 	}
-	if v := Diagnose(tg, order, res); !strings.Contains(v, "reachable and responding") {
-		t.Errorf("got %q, want success verdict", v)
+	if v := Diagnose(tg, order, res); v != "" {
+		t.Errorf("got %q, want no redundant success verdict", v)
 	}
 }

@@ -42,8 +42,8 @@ func TestSkipPropagation(t *testing.T) {
 	if m.results[pTargetTCP].Status != StatusSkip {
 		t.Fatalf("target_tcp = %v, want Skip", m.results[pTargetTCP].Status)
 	}
-	if m.results[pTLS].Status != StatusSkip || m.results[pHTTP].Status != StatusSkip {
-		t.Error("skip must propagate through TLS and HTTP")
+	if m.results[pTLS].Status != StatusSkip || m.results[pHTTP].Status != StatusSkip || m.results[pHTTPS].Status != StatusSkip {
+		t.Error("skip must propagate through TLS, HTTP, and HTTPS")
 	}
 }
 

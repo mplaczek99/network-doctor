@@ -19,11 +19,39 @@ func TestBuildProbesShape(t *testing.T) {
 	if got := len(BuildProbes(nil)); got != 3 {
 		t.Errorf("generic probes = %d, want 3", got)
 	}
-	if got := len(BuildProbes(mustTarget(t, "github.com"))); got != 6 {
-		t.Errorf("https target probes = %d, want 6", got)
+	if got := len(BuildProbes(mustTarget(t, "github.com"))); got != 7 {
+		t.Errorf("https target probes = %d, want 7", got)
 	}
 	if got := len(BuildProbes(mustTarget(t, "host:22"))); got != 5 {
 		t.Errorf("ssh target probes = %d, want 5", got)
+	}
+}
+
+func TestBuildProbesNamesProtocolApplicationRow(t *testing.T) {
+	https := BuildProbes(mustTarget(t, "https://example.com"))
+	want := []struct {
+		id   ProbeID
+		name string
+		dep  ProbeID
+	}{
+		{id: ProbeTLS, name: "TLS example.com", dep: ProbeTargetTCP},
+		{id: ProbeHTTP, name: "HTTP example.com", dep: ProbeDNS},
+		{id: ProbeHTTPS, name: "HTTPS example.com", dep: ProbeTLS},
+	}
+	for i, tt := range want {
+		got := https[len(https)-len(want)+i]
+		if got.ID != tt.id || got.Name != tt.name {
+			t.Errorf("probe %d = (%q, %q), want (%q, %q)", i, got.ID, got.Name, tt.id, tt.name)
+		}
+		if len(got.Deps) != 1 || got.Deps[0] != tt.dep {
+			t.Errorf("probe %s deps = %v, want [%s]", got.ID, got.Deps, tt.dep)
+		}
+	}
+
+	http := BuildProbes(mustTarget(t, "http://example.com"))
+	got := http[len(http)-1]
+	if got.ID != ProbeHTTP || got.Name != "HTTP example.com" || len(got.Deps) != 1 || got.Deps[0] != ProbeTargetTCP {
+		t.Errorf("plain HTTP application probe = %+v, want HTTP depending on target TCP", got)
 	}
 }
 

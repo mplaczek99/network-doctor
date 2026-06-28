@@ -61,6 +61,7 @@ const (
 	ProbeTargetTCP ProbeID = "target_tcp"
 	ProbeTLS       ProbeID = "tls"
 	ProbeHTTP      ProbeID = "http"
+	ProbeHTTPS     ProbeID = "https"
 	ProbeSSH       ProbeID = "ssh_banner"
 	ProbeSMTP      ProbeID = "smtp_banner"
 )
@@ -71,7 +72,7 @@ type ProbeResult struct {
 	ID         ProbeID
 	Status     Status
 	Addrs      []net.IP // DNS publishes all A records here
-	SelectedIP net.IP   // Target TCP publishes the pinned IP
+	SelectedIP net.IP   // winning/pinned IP used by this probe
 	Source     net.IP
 	Iface      string
 	Network    string // connected Wi-Fi SSID, empty when wired/unknown
@@ -128,11 +129,12 @@ func BuildProbes(t *Target) []Probe {
 	case ProtoTLSHTTP:
 		probes = append(probes,
 			Probe{ID: ProbeTLS, Name: "TLS " + host, Deps: []ProbeID{ProbeTargetTCP}, Run: tlsProbe(host, port)},
-			Probe{ID: ProbeHTTP, Name: "HTTP " + host, Deps: []ProbeID{ProbeTargetTCP}, Run: httpProbe(host, port, "https")},
+			Probe{ID: ProbeHTTP, Name: "HTTP " + host, Deps: []ProbeID{ProbeDNS}, Run: httpProbe(ProbeHTTP, host, 80, "http", ProbeDNS)},
+			Probe{ID: ProbeHTTPS, Name: "HTTPS " + host, Deps: []ProbeID{ProbeTLS}, Run: httpProbe(ProbeHTTPS, host, port, "https", ProbeTLS)},
 		)
 	case ProtoHTTP:
 		probes = append(probes,
-			Probe{ID: ProbeHTTP, Name: "HTTP " + host, Deps: []ProbeID{ProbeTargetTCP}, Run: httpProbe(host, port, "http")},
+			Probe{ID: ProbeHTTP, Name: "HTTP " + host, Deps: []ProbeID{ProbeTargetTCP}, Run: httpProbe(ProbeHTTP, host, port, "http", ProbeTargetTCP)},
 		)
 	case ProtoSSH:
 		probes = append(probes, bannerProbe(ProbeSSH, fmt.Sprintf("SSH banner %s:%d", host, port), port))
@@ -262,22 +264,34 @@ func tlsProbe(host string, port int) func(context.Context, map[ProbeID]ProbeResu
 	}
 }
 
-func httpProbe(host string, port int, scheme string) func(context.Context, map[ProbeID]ProbeResult) ProbeResult {
+func httpProbe(id ProbeID, host string, port int, scheme string, addressDep ProbeID) func(context.Context, map[ProbeID]ProbeResult) ProbeResult {
 	return func(ctx context.Context, deps map[ProbeID]ProbeResult) ProbeResult {
-		r := ProbeResult{ID: ProbeHTTP}
-		ip := deps[ProbeTargetTCP].SelectedIP
-		if ip == nil {
-			r.Status, r.Detail = StatusSkip, "no pinned IP from Target TCP"
+		r := ProbeResult{ID: id}
+		protocol := strings.ToUpper(scheme)
+		var addrs []net.IP
+		if addressDep == ProbeDNS {
+			addrs = deps[addressDep].Addrs
+		} else if ip := deps[addressDep].SelectedIP; ip != nil {
+			addrs = []net.IP{ip}
+		}
+		if len(addrs) == 0 {
+			r.Status, r.Detail = StatusSkip, "no address available for "+protocol
 			return r
 		}
-		dialAddr := net.JoinHostPort(ip.String(), strconv.Itoa(port))
-		// Fresh, non-reusing transport pinned to the selected IP; redirects and
-		// proxy off; bounded response headers (attacker-controlled).
+		// Fresh, non-reusing transport restricted to the resolved/pinned IPs;
+		// redirects and proxy off; bounded response headers (attacker-controlled).
 		tr := &http.Transport{
 			Proxy: nil,
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				var d net.Dialer
-				return d.DialContext(ctx, "tcp4", dialAddr)
+				conn, selected, attempts, rtt := dialIPs(ctx, addrs, port)
+				r.SelectedIP, r.Attempts, r.RTT = selected, attempts, rtt
+				if conn == nil {
+					if len(attempts) > 0 && attempts[len(attempts)-1].Err != nil {
+						return nil, attempts[len(attempts)-1].Err
+					}
+					return nil, fmt.Errorf("all %s addresses failed", protocol)
+				}
+				return conn, nil
 			},
 			TLSClientConfig:        &tls.Config{ServerName: host},
 			MaxResponseHeaderBytes: 64 << 10,
@@ -296,12 +310,13 @@ func httpProbe(host string, port int, scheme string) func(context.Context, map[P
 		resp, err := client.Do(req)
 		if err != nil {
 			r.Status = StatusFail
-			r.Detail, r.Fix = "no HTTP response: "+textsafe.Clean(err.Error()), "HTTP blocked — proxy or firewall?"
+			r.Detail = "no " + protocol + " response: " + textsafe.Clean(err.Error())
+			r.Fix = protocol + " blocked — proxy or firewall?"
 			return r
 		}
 		resp.Body.Close()
-		r.Status, r.SelectedIP = StatusPass, ip
-		r.Detail = fmt.Sprintf("HTTP %d (responded)", resp.StatusCode)
+		r.Status = StatusPass
+		r.Detail = fmt.Sprintf("%s %d (responded)", protocol, resp.StatusCode)
 		return r
 	}
 }

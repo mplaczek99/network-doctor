@@ -54,3 +54,23 @@ func TestExportNoClobber(t *testing.T) {
 		t.Errorf("export reused path %q — must not clobber", p1)
 	}
 }
+
+func TestExportOmitsRedundantSuccessDiagnosis(t *testing.T) {
+	t.Chdir(t.TempDir())
+	m := newModel(mustTarget(t, "github.com"))
+	for _, id := range m.order {
+		m.results[id] = ProbeResult{Status: StatusPass, Detail: "ok"}
+	}
+
+	path, err := exportReport(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "## Diagnosis") {
+		t.Error("successful report should rely on probe rows, not repeat a diagnosis")
+	}
+}

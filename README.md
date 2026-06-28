@@ -11,25 +11,27 @@ the selected probe.
 ```
 Network Doctor                Diagnosis
 
-✓ Interface                   github.com:443 is reachable and responding.
+✓ Interface
 ✓ Internet (TCP egress)
-✓ DNS github.com              HTTP github.com
-✓ TCP github.com:443          PASS — HTTP 200 (responded)
+✓ DNS github.com              HTTPS github.com
+✓ TCP github.com:443          PASS — HTTPS 200 (responded)
 ✓ TLS github.com
 ✓ HTTP github.com
+✓ HTTPS github.com
 
 ↑/↓ select · r rerun · q quit
 ```
 
 ## How it diagnoses
 
-Probes form a **dependency graph with two paths**, so an unrelated failure never
-hides a working one:
+Probes form a **dependency graph with independent branches**, so an unrelated
+failure never hides a working one:
 
 - **Direct-egress path** (independent of DNS): `Interface → Internet (TCP
   egress)`. Always runs, so "DNS is down but the internet is up" is diagnosable.
-- **Target path** (needs the resolved IP): `Interface → DNS → TCP → protocol
-  rows`.
+- **Plain HTTP path**: `Interface → DNS → HTTP :80`.
+- **Selected target path**: `Interface → DNS → TCP → TLS → HTTPS` for secure
+  web targets, or the applicable protocol row for other ports.
 
 Each row is one of four states: **✓ Pass**, **✗ Fail**, **⊘ Skip** (a
 prerequisite failed), or **– N/A** (doesn't apply — e.g. DNS on an IP literal).
@@ -41,7 +43,8 @@ prerequisite failed), or **– N/A** (doesn't apply — e.g. DNS on an IP litera
 | **DNS** | The host resolves to an IPv4 (system resolution) | IP-literal targets are N/A; all A records are retained |
 | **TCP** | A TCP connect to the target port succeeds | tries each A record, pins the first that connects |
 | **TLS** | The TLS handshake (SNI + cert verification) succeeds | bad/expired cert, clock skew, or MITM → Fail |
-| **HTTP** | Any HTTP response (incl. 3xx/4xx/5xx) is received | HEAD against the pinned IP, redirects off, proxy off |
+| **HTTP** | Port 80 returns any HTTP response (incl. 3xx/4xx/5xx) | Independent HEAD after DNS, redirects off, proxy off |
+| **HTTPS** | The selected TLS port returns any HTTP response | HEAD against the TLS-validated IP, redirects off, proxy off |
 | **SSH/SMTP banner** | TCP connects (banner read best-effort) | bounded read; "connected but silent" still passes |
 
 RTT is measured from the TCP-connect handshake (no ICMP, no root). The source IP
@@ -69,14 +72,14 @@ go build -o network-doctor .
 
 ```sh
 network-doctor                  # generic local + internet diagnosis
-network-doctor github.com       # diagnose the path to a host (→ TLS + HTTP)
+network-doctor github.com       # diagnose the path to a host (→ HTTP + TLS + HTTPS)
 network-doctor github.com:22    # port selects the protocol rows (→ SSH banner)
-network-doctor https://host:80  # explicit scheme selects the protocol (→ TLS on :80)
+network-doctor https://host:80  # explicit scheme selects the protocol (→ TLS + HTTPS on :80)
 ```
 
 The target parser has two independent axes: the **port** (explicit `:port` >
 scheme default > 443) and the **protocol rows** (an explicit `http`/`https`
-scheme wins; otherwise inferred from the port — `443/8443`→TLS+HTTP, `80`→HTTP,
+scheme wins; otherwise inferred from the port — `443/8443`→HTTP+TLS+HTTPS, `80`→HTTP,
 `22`→SSH, `25/587`→SMTP). Hosts are validated against a strict allowlist; IPv6
 literals are rejected (IPv4 only).
 

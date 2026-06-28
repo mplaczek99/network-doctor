@@ -30,6 +30,7 @@ const (
 	pTargetTCP = diagnostic.ProbeTargetTCP
 	pTLS       = diagnostic.ProbeTLS
 	pHTTP      = diagnostic.ProbeHTTP
+	pHTTPS     = diagnostic.ProbeHTTPS
 
 	probeTimeout = diagnostic.ProbeTimeout
 )

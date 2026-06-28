@@ -7,7 +7,7 @@ import (
 
 // targetOrder is the full https probe order used to exercise the target-mode
 // verdict branches.
-var targetOrder = []ProbeID{ProbeIface, ProbeInternet, ProbeDNS, ProbeTargetTCP, ProbeTLS, ProbeHTTP}
+var targetOrder = []ProbeID{ProbeIface, ProbeInternet, ProbeDNS, ProbeTargetTCP, ProbeTLS, ProbeHTTP, ProbeHTTPS}
 
 func TestDiagnoseTargetBranches(t *testing.T) {
 	tg := mustTarget(t, "github.com")
@@ -24,7 +24,7 @@ func TestDiagnoseTargetBranches(t *testing.T) {
 			name: "iface down short-circuits",
 			res: map[ProbeID]ProbeResult{
 				ProbeIface: fail, ProbeInternet: skip, ProbeDNS: skip,
-				ProbeTargetTCP: skip, ProbeTLS: skip, ProbeHTTP: skip,
+				ProbeTargetTCP: skip, ProbeTLS: skip, ProbeHTTP: skip, ProbeHTTPS: skip,
 			},
 			want: "link is down",
 		},
@@ -32,7 +32,7 @@ func TestDiagnoseTargetBranches(t *testing.T) {
 			name: "dns fails but general internet is up",
 			res: map[ProbeID]ProbeResult{
 				ProbeIface: pass, ProbeInternet: pass, ProbeDNS: fail,
-				ProbeTargetTCP: skip, ProbeTLS: skip, ProbeHTTP: skip,
+				ProbeTargetTCP: skip, ProbeTLS: skip, ProbeHTTP: skip, ProbeHTTPS: skip,
 			},
 			want: "general internet is reachable",
 		},
@@ -40,7 +40,7 @@ func TestDiagnoseTargetBranches(t *testing.T) {
 			name: "target unreachable but internet up",
 			res: map[ProbeID]ProbeResult{
 				ProbeIface: pass, ProbeInternet: pass, ProbeDNS: pass,
-				ProbeTargetTCP: fail, ProbeTLS: skip, ProbeHTTP: skip,
+				ProbeTargetTCP: fail, ProbeTLS: skip, ProbeHTTP: pass, ProbeHTTPS: skip,
 			},
 			want: "unreachable though DNS and the general internet work",
 		},
@@ -48,7 +48,7 @@ func TestDiagnoseTargetBranches(t *testing.T) {
 			name: "target and internet both unreachable",
 			res: map[ProbeID]ProbeResult{
 				ProbeIface: pass, ProbeInternet: fail, ProbeDNS: pass,
-				ProbeTargetTCP: fail, ProbeTLS: skip, ProbeHTTP: skip,
+				ProbeTargetTCP: fail, ProbeTLS: skip, ProbeHTTP: fail, ProbeHTTPS: skip,
 			},
 			want: "local egress problem",
 		},
@@ -56,17 +56,25 @@ func TestDiagnoseTargetBranches(t *testing.T) {
 			name: "tls handshake fails",
 			res: map[ProbeID]ProbeResult{
 				ProbeIface: pass, ProbeInternet: pass, ProbeDNS: pass,
-				ProbeTargetTCP: pass, ProbeTLS: fail, ProbeHTTP: skip,
+				ProbeTargetTCP: pass, ProbeTLS: fail, ProbeHTTP: pass, ProbeHTTPS: skip,
 			},
 			want: "TLS handshake fails",
+		},
+		{
+			name: "https blocked",
+			res: map[ProbeID]ProbeResult{
+				ProbeIface: pass, ProbeInternet: pass, ProbeDNS: pass,
+				ProbeTargetTCP: pass, ProbeTLS: pass, ProbeHTTP: pass, ProbeHTTPS: fail,
+			},
+			want: "no HTTPS response",
 		},
 		{
 			name: "http blocked",
 			res: map[ProbeID]ProbeResult{
 				ProbeIface: pass, ProbeInternet: pass, ProbeDNS: pass,
-				ProbeTargetTCP: pass, ProbeTLS: pass, ProbeHTTP: fail,
+				ProbeTargetTCP: pass, ProbeTLS: pass, ProbeHTTP: fail, ProbeHTTPS: pass,
 			},
-			want: "no HTTP response",
+			want: "HTTPS works but no HTTP response",
 		},
 	}
 	for _, c := range cases {

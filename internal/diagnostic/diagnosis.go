@@ -5,6 +5,8 @@ import "fmt"
 // Diagnose computes the plain-English verdict from current-generation native
 // probe state only (tool facts never feed in). First-fail ordering + combination
 // rules. Returns "Running diagnostics…" until every probe in order has a result.
+// A completed target with no failures returns an empty string because the
+// successful probe rows already communicate the outcome.
 func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 	for _, id := range order {
 		if _, ok := res[id]; !ok {
@@ -49,11 +51,16 @@ func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 		return host + " resolves but neither it nor the general internet is reachable — local egress problem."
 	case has(ProbeTLS) && fail(ProbeTLS):
 		return "TCP reaches " + hp + " but the TLS handshake fails — bad/expired cert, clock skew, or MITM proxy."
+	case has(ProbeHTTPS) && fail(ProbeHTTPS):
+		return "TLS is fine but no HTTPS response from " + hp + " — application-layer or proxy block."
 	case has(ProbeHTTP) && fail(ProbeHTTP):
-		return "TLS is fine but no HTTP response from " + hp + " — application-layer or proxy block."
+		if t.Proto == ProtoTLSHTTP {
+			return "HTTPS works but no HTTP response from " + host + ":80 — the redirect/plain-HTTP endpoint may be blocked."
+		}
+		return "No HTTP response from " + hp + " — application-layer or proxy block."
 	case (has(ProbeSSH) && fail(ProbeSSH)) || (has(ProbeSMTP) && fail(ProbeSMTP)):
 		return hp + " accepts TCP but the service banner check failed."
 	default:
-		return hp + " is reachable and responding."
+		return ""
 	}
 }

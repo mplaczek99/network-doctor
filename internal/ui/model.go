@@ -469,7 +469,9 @@ func (m model) View() string {
 	if deferred {
 		right.WriteString("Toolbox mode — press r to run the diagnostic chain, or pick a tool below.\n")
 	} else {
-		right.WriteString(diagnose(m.target, m.order, m.results) + "\n\n")
+		if summary := diagnose(m.target, m.order, m.results); summary != "" {
+			right.WriteString(summary + "\n\n")
+		}
 		id := m.order[m.selected]
 		right.WriteString(titleStyle.Render(m.byID[id].Name) + "\n")
 		if r, ok := m.results[id]; ok {

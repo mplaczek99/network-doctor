@@ -22,7 +22,9 @@ func exportReport(m model) (string, error) {
 		tgt = fmt.Sprintf("%s:%d", m.target.Host, m.target.Port)
 	}
 	b.WriteString("Target: " + sanitize(tgt) + "\n\n")
-	b.WriteString("## Diagnosis\n\n" + sanitize(diagnose(m.target, m.order, m.results)) + "\n\n")
+	if summary := diagnose(m.target, m.order, m.results); summary != "" {
+		b.WriteString("## Diagnosis\n\n" + sanitize(summary) + "\n\n")
+	}
 
 	b.WriteString("## Probes\n\n")
 	for _, id := range m.order {
