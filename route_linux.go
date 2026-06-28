@@ -4,7 +4,6 @@ package main
 
 import (
 	"bufio"
-	"encoding/binary"
 	"encoding/hex"
 	"io"
 	"net"
@@ -135,8 +134,5 @@ func decodeGatewayHex(h string) (string, error) {
 	if len(b) != 4 {
 		return "", strconv.ErrSyntax
 	}
-	v := binary.LittleEndian.Uint32(b)
-	var ip [4]byte
-	binary.BigEndian.PutUint32(ip[:], v)
-	return net.IP(ip[:]).String(), nil
+	return net.IPv4(b[3], b[2], b[1], b[0]).String(), nil
 }
