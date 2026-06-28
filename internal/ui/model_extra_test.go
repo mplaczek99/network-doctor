@@ -58,15 +58,6 @@ func TestAppendCapped(t *testing.T) {
 	}
 }
 
-func TestTargetHost(t *testing.T) {
-	if got := targetHost(nil); got != "" {
-		t.Errorf("targetHost(nil) = %q, want empty", got)
-	}
-	if got := targetHost(mustTarget(t, "github.com")); got != "github.com" {
-		t.Errorf("targetHost = %q, want github.com", got)
-	}
-}
-
 func TestSchemeFor(t *testing.T) {
 	cases := []struct {
 		target string

@@ -381,13 +381,6 @@ func appendCapped(lines []string, line string) []string {
 	return lines
 }
 
-func targetHost(t *Target) string {
-	if t == nil {
-		return ""
-	}
-	return t.Host
-}
-
 func (m *model) clearCancel() {
 	if m.cancel != nil {
 		m.cancel()
