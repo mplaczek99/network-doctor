@@ -32,7 +32,7 @@ func exportReport(m model) (string, error) {
 			b.WriteString("- [ ] " + name + " — not run\n")
 			continue
 		}
-		b.WriteString(fmt.Sprintf("- %s **%s** — %s\n", statusMark(r.Status), name, sanitize(r.Detail)))
+		b.WriteString(fmt.Sprintf("- %c **%s** — %s\n", statusGlyph(r.Status), name, sanitize(r.Detail)))
 		if r.Status == StatusFail && r.Fix != "" {
 			b.WriteString("  - fix: " + sanitize(r.Fix) + "\n")
 		}
@@ -72,20 +72,6 @@ func indentBlock(s string) string {
 	}
 	b.WriteString("\n")
 	return b.String()
-}
-
-func statusMark(s Status) string {
-	switch s {
-	case StatusPass:
-		return "✓"
-	case StatusFail:
-		return "✗"
-	case StatusSkip:
-		return "⊘"
-	case StatusNA:
-		return "–"
-	}
-	return "?"
 }
 
 // uniquePath returns a timestamped report filename that doesn't already exist.

@@ -17,6 +17,25 @@ func asModel(t *testing.T, m tea.Model) model {
 
 func keyMsg(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
 
+func TestStatusGlyph(t *testing.T) {
+	tests := []struct {
+		status Status
+		want   rune
+	}{
+		{StatusPass, '✓'},
+		{StatusFail, '✗'},
+		{StatusSkip, '⊘'},
+		{StatusNA, '–'},
+		{Status(255), '?'},
+	}
+
+	for _, tt := range tests {
+		if got := statusGlyph(tt.status); got != tt.want {
+			t.Errorf("statusGlyph(%d) = %q, want %q", tt.status, got, tt.want)
+		}
+	}
+}
+
 // A probeDoneMsg from a stale generation is dropped (mirrors the gen guard).
 func TestStaleProbeDropped(t *testing.T) {
 	m := newModel(nil)

@@ -396,22 +396,37 @@ func (m *model) clearCancel() {
 	}
 }
 
+func statusGlyph(status Status) rune {
+	switch status {
+	case StatusPass:
+		return '✓'
+	case StatusFail:
+		return '✗'
+	case StatusSkip:
+		return '⊘'
+	case StatusNA:
+		return '–'
+	}
+	return '?'
+}
+
 func (m model) glyph(id ProbeID) string {
 	r, ok := m.results[id]
 	if !ok {
 		return m.spinner.View()
 	}
+	mark := string(statusGlyph(r.Status))
 	switch r.Status {
 	case StatusPass:
-		return passStyle.Render("✓")
+		return passStyle.Render(mark)
 	case StatusFail:
-		return failStyle.Render("✗")
+		return failStyle.Render(mark)
 	case StatusSkip:
-		return skipStyle.Render("⊘")
+		return skipStyle.Render(mark)
 	case StatusNA:
-		return faintStyle.Render("–")
+		return faintStyle.Render(mark)
 	}
-	return "?"
+	return mark
 }
 
 func (m model) View() string {
