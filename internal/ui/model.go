@@ -92,6 +92,18 @@ var (
 	selStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 )
 
+type styledGlyph struct {
+	glyph rune
+	style lipgloss.Style
+}
+
+var statusGlyphs = map[Status]styledGlyph{
+	StatusPass: {'✓', passStyle},
+	StatusFail: {'✗', failStyle},
+	StatusSkip: {'⊘', skipStyle},
+	StatusNA:   {'–', faintStyle},
+}
+
 func newModel(t *Target) model {
 	probes := buildProbes(t)
 	order := make([]ProbeID, len(probes))
@@ -389,15 +401,8 @@ func (m *model) clearCancel() {
 }
 
 func statusGlyph(status Status) rune {
-	switch status {
-	case StatusPass:
-		return '✓'
-	case StatusFail:
-		return '✗'
-	case StatusSkip:
-		return '⊘'
-	case StatusNA:
-		return '–'
+	if glyph, ok := statusGlyphs[status]; ok {
+		return glyph.glyph
 	}
 	return '?'
 }
@@ -407,18 +412,10 @@ func (m model) glyph(id ProbeID) string {
 	if !ok {
 		return m.spinner.View()
 	}
-	mark := string(statusGlyph(r.Status))
-	switch r.Status {
-	case StatusPass:
-		return passStyle.Render(mark)
-	case StatusFail:
-		return failStyle.Render(mark)
-	case StatusSkip:
-		return skipStyle.Render(mark)
-	case StatusNA:
-		return faintStyle.Render(mark)
+	if glyph, ok := statusGlyphs[r.Status]; ok {
+		return glyph.style.Render(string(glyph.glyph))
 	}
-	return mark
+	return "?"
 }
 
 // networkLine is the connected-network label shown under the title: the Wi-Fi
