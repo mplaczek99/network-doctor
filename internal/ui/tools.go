@@ -5,7 +5,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // Tool is a drill-down adapter: a bounded external command keyed to a hotkey.
@@ -123,32 +122,16 @@ func shellArgs(args []string) string {
 	return strings.Join(out, " ")
 }
 
-// Confidence grades a best-effort extracted fact.
-type Confidence int
-
-const (
-	Low Confidence = iota
-	Medium
-	High
-)
-
-// Fact is a typed, generation-scoped datum extracted from a finished tool's
-// output. Facts are display-only evidence — they never feed the diagnosis.
+// Fact is display-only evidence extracted from a finished tool's output.
 type Fact struct {
 	Key, Value string
-	Confidence Confidence
-	Source     string
-	Target     string
-	Generation int
-	JobID      string
-	At         time.Time
 }
 
 // extractFacts pulls a few stable facts from a finished tool's stdout. Best
 // effort across tool versions; the raw (sanitized) output stays authoritative.
-func extractFacts(toolKey string, stdout []string, gen int, jobID, target string) []Fact {
-	mk := func(k, v string, c Confidence) Fact {
-		return Fact{Key: k, Value: v, Confidence: c, Source: toolKey, Target: target, Generation: gen, JobID: jobID, At: time.Now()}
+func extractFacts(toolKey string, stdout []string) []Fact {
+	mk := func(k, v string) Fact {
+		return Fact{Key: k, Value: v}
 	}
 	var facts []Fact
 	switch toolKey {
@@ -157,10 +140,10 @@ func extractFacts(toolKey string, stdout []string, gen int, jobID, target string
 			f := strings.Fields(stdout[i])
 			if len(f) == 4 {
 				facts = append(facts,
-					mk("http_code", f[0], High),
-					mk("time_total", f[1]+"s", High),
-					mk("remote_ip", f[2], High),
-					mk("ssl_verify", f[3], Medium))
+					mk("http_code", f[0]),
+					mk("time_total", f[1]+"s"),
+					mk("remote_ip", f[2]),
+					mk("ssl_verify", f[3]))
 				break
 			}
 		}
@@ -169,12 +152,12 @@ func extractFacts(toolKey string, stdout []string, gen int, jobID, target string
 			if i := strings.Index(ln, "packet loss"); i >= 0 {
 				end := i + len("packet loss")
 				if j := strings.LastIndex(ln[:i], ","); j >= 0 {
-					facts = append(facts, mk("packet_loss", strings.TrimSpace(ln[j+1:end]), High))
+					facts = append(facts, mk("packet_loss", strings.TrimSpace(ln[j+1:end])))
 				}
 			}
 			if i := strings.Index(ln, "min/avg/max"); i >= 0 {
 				if eq := strings.Index(ln, "="); eq >= 0 {
-					facts = append(facts, mk("rtt", strings.TrimSpace(ln[eq+1:]), High))
+					facts = append(facts, mk("rtt", strings.TrimSpace(ln[eq+1:])))
 				}
 			}
 		}
@@ -187,7 +170,7 @@ func extractFacts(toolKey string, stdout []string, gen int, jobID, target string
 			}
 		}
 		if len(as) > 0 {
-			facts = append(facts, mk("A_records", strings.Join(as, ", "), High))
+			facts = append(facts, mk("A_records", strings.Join(as, ", ")))
 		}
 	}
 	return facts

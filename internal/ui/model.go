@@ -177,7 +177,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.jobStatus, m.jobDropped, m.activeJob = msg.Status, msg.Dropped, nil
-		m.facts = extractFacts(m.jobToolKey, m.jobOut, m.generation, msg.JobID, targetHost(m.target))
+		m.facts = extractFacts(m.jobToolKey, m.jobOut)
 		if m.pending != nil {
 			p := m.pending
 			m.pending = nil

@@ -13,7 +13,7 @@ func factVal(facts []Fact, key string) (string, bool) {
 
 func TestExtractCurl(t *testing.T) {
 	stdout := []string{"200 0.123456 140.82.112.3 0"}
-	facts := extractFacts("c", stdout, 1, "job1", "github.com")
+	facts := extractFacts("c", stdout)
 	if v, ok := factVal(facts, "http_code"); !ok || v != "200" {
 		t.Errorf("http_code = %q (%v), want 200", v, ok)
 	}
@@ -31,7 +31,7 @@ func TestExtractPing(t *testing.T) {
 		"4 packets transmitted, 4 received, 0% packet loss, time 3005ms",
 		"rtt min/avg/max/mdev = 1.0/2.0/3.0/0.5 ms",
 	}
-	facts := extractFacts("p", stdout, 1, "job1", "github.com")
+	facts := extractFacts("p", stdout)
 	if v, ok := factVal(facts, "packet_loss"); !ok || v != "0% packet loss" {
 		t.Errorf("packet_loss = %q, want '0%% packet loss'", v)
 	}
@@ -46,7 +46,7 @@ func TestExtractDig(t *testing.T) {
 		"github.com.\t60\tIN\tA\t140.82.112.3",
 		"github.com.\t60\tIN\tA\t140.82.113.4",
 	}
-	facts := extractFacts("d", stdout, 1, "job1", "github.com")
+	facts := extractFacts("d", stdout)
 	v, ok := factVal(facts, "A_records")
 	if !ok || v != "140.82.112.3, 140.82.113.4" {
 		t.Errorf("A_records = %q, want both IPs", v)
