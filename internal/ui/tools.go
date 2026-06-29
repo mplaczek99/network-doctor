@@ -3,6 +3,7 @@ package ui
 import (
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -29,40 +30,16 @@ func (t Tool) Available() bool {
 // given.
 func toolsFor(t *Target) []Tool {
 	tools := []Tool{
-		{
-			Key: "i", Name: "ip route", Bin: "ip",
-			Build: func(*Target) ([]string, []string, string) {
-				args := []string{"route"}
-				return args, nil, "ip " + shellArgs(args)
-			},
-		},
-		{
-			Key: "s", Name: "ss", Bin: "ss",
-			Build: func(*Target) ([]string, []string, string) {
-				args := []string{"-tunp"}
-				return args, nil, "ss " + shellArgs(args)
-			},
-		},
+		staticTool("i", "ip route", "ip", "route"),
+		staticTool("s", "ss", "ss", "-tunp"),
 	}
 	if t == nil {
 		return tools
 	}
 	host := t.Host
 	return append(tools,
-		Tool{
-			Key: "p", Name: "ping", Bin: "ping",
-			Build: func(*Target) ([]string, []string, string) {
-				args := []string{"-c", "4", "-W", "2", host}
-				return args, nil, "ping " + shellArgs(args)
-			},
-		},
-		Tool{
-			Key: "d", Name: "dig", Bin: "dig",
-			Build: func(*Target) ([]string, []string, string) {
-				args := []string{"+time=2", "+tries=1", host}
-				return args, nil, "dig " + shellArgs(args)
-			},
-		},
+		staticTool("p", "ping", "ping", "-c", "4", "-W", "2", host),
+		staticTool("d", "dig", "dig", "+time=2", "+tries=1", host),
 		Tool{
 			Key: "c", Name: "curl", Bin: "curl",
 			Build: func(t *Target) ([]string, []string, string) {
@@ -83,22 +60,20 @@ func toolsFor(t *Target) []Tool {
 				return args, env, "LC_ALL=C curl " + shellArgs(args)
 			},
 		},
-		Tool{
-			Key: "t", Name: "traceroute", Bin: "traceroute",
-			Build: func(*Target) ([]string, []string, string) {
-				args := []string{"-w", "2", "-q", "1", "-m", "20", host}
-				return args, nil, "traceroute " + shellArgs(args)
-			},
-		},
-		Tool{
-			Key: "m", Name: "mtr", Bin: "mtr",
-			Build: func(*Target) ([]string, []string, string) {
-				// report mode only — never curses inside our TUI.
-				args := []string{"--report", "--report-cycles", "5", host}
-				return args, nil, "mtr " + shellArgs(args)
-			},
-		},
+		staticTool("t", "traceroute", "traceroute", "-w", "2", "-q", "1", "-m", "20", host),
+		// mtr report mode only — never curses inside our TUI.
+		staticTool("m", "mtr", "mtr", "--report", "--report-cycles", "5", host),
 	)
+}
+
+// staticTool builds a target-independent Tool whose argv is fixed at construction
+// (a host, if any, is already baked into args). slices.Clone gives each Build call
+// independent slices, matching the per-call allocation of the literals it replaces.
+func staticTool(key, name, bin string, args ...string) Tool {
+	return Tool{Key: key, Name: name, Bin: bin, Build: func(*Target) ([]string, []string, string) {
+		a := slices.Clone(args)
+		return a, nil, bin + " " + shellArgs(a)
+	}}
 }
 
 func schemeFor(t *Target) string {
