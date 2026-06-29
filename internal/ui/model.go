@@ -92,17 +92,7 @@ var (
 	selStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 )
 
-type styledGlyph struct {
-	glyph rune
-	style lipgloss.Style
-}
-
-var statusGlyphs = map[Status]styledGlyph{
-	StatusPass: {'✓', passStyle},
-	StatusFail: {'✗', failStyle},
-	StatusSkip: {'⊘', skipStyle},
-	StatusNA:   {'–', faintStyle},
-}
+var statusGlyphs = map[Status]rune{StatusPass: '✓', StatusFail: '✗', StatusSkip: '⊘', StatusNA: '–'}
 
 func newModel(t *Target) model {
 	probes := buildProbes(t)
@@ -402,7 +392,7 @@ func (m *model) clearCancel() {
 
 func statusGlyph(status Status) rune {
 	if glyph, ok := statusGlyphs[status]; ok {
-		return glyph.glyph
+		return glyph
 	}
 	return '?'
 }
@@ -412,8 +402,16 @@ func (m model) glyph(id ProbeID) string {
 	if !ok {
 		return m.spinner.View()
 	}
-	if glyph, ok := statusGlyphs[r.Status]; ok {
-		return glyph.style.Render(string(glyph.glyph))
+	glyph := string(statusGlyph(r.Status))
+	switch r.Status {
+	case StatusPass:
+		return passStyle.Render(glyph)
+	case StatusFail:
+		return failStyle.Render(glyph)
+	case StatusSkip:
+		return skipStyle.Render(glyph)
+	case StatusNA:
+		return faintStyle.Render(glyph)
 	}
 	return "?"
 }
