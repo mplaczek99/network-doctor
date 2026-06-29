@@ -43,7 +43,11 @@ func toolsFor(t *Target) []Tool {
 		Tool{
 			Key: "c", Name: "curl", Bin: "curl",
 			Build: func(t *Target) ([]string, []string, string) {
-				url := schemeFor(t) + "://" + host
+				scheme := "https"
+				if t.Proto == ProtoHTTP {
+					scheme = "http"
+				}
+				url := scheme + "://" + host
 				if t.PortExplicit {
 					url += ":" + strconv.Itoa(t.Port)
 				}
@@ -74,13 +78,6 @@ func staticTool(key, name, bin string, args ...string) Tool {
 		a := slices.Clone(args)
 		return a, nil, bin + " " + shellArgs(a)
 	}}
-}
-
-func schemeFor(t *Target) string {
-	if t.Proto == ProtoHTTP {
-		return "http"
-	}
-	return "https"
 }
 
 // shellArgs renders argv for *display only* (never executed), quoting tokens with

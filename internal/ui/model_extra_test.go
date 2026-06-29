@@ -58,7 +58,7 @@ func TestAppendCapped(t *testing.T) {
 	}
 }
 
-func TestSchemeFor(t *testing.T) {
+func TestToolBuildCurlScheme(t *testing.T) {
 	cases := []struct {
 		target string
 		want   string
@@ -68,8 +68,17 @@ func TestSchemeFor(t *testing.T) {
 		{"example.com:22", "https"}, // non-http proto defaults to https
 	}
 	for _, c := range cases {
-		if got := schemeFor(mustTarget(t, c.target)); got != c.want {
-			t.Errorf("schemeFor(%q) = %q, want %q", c.target, got, c.want)
+		target := mustTarget(t, c.target)
+		var curl Tool
+		for _, tool := range toolsFor(target) {
+			if tool.Key == "c" {
+				curl = tool
+				break
+			}
+		}
+		args, _, _ := curl.Build(target)
+		if got := args[len(args)-1]; !strings.HasPrefix(got, c.want+"://") {
+			t.Errorf("curl URL for %q = %q, want %q scheme", c.target, got, c.want)
 		}
 	}
 }
