@@ -27,7 +27,6 @@ type Target struct {
 	Host         string
 	IP           net.IP // set iff IsLiteral
 	Port         int
-	Scheme       string
 	Proto        Proto
 	PortExplicit bool
 	IsLiteral    bool
@@ -47,11 +46,12 @@ func ParseTarget(raw string) (*Target, error) {
 		return nil, errors.New("empty target")
 	}
 	t := &Target{}
+	var scheme string
 
 	if i := strings.Index(s, "://"); i >= 0 {
-		t.Scheme = strings.ToLower(s[:i])
-		if t.Scheme != "http" && t.Scheme != "https" {
-			return nil, fmt.Errorf("unsupported scheme %q (only http/https)", t.Scheme)
+		scheme = strings.ToLower(s[:i])
+		if scheme != "http" && scheme != "https" {
+			return nil, fmt.Errorf("unsupported scheme %q (only http/https)", scheme)
 		}
 		s = s[i+3:]
 	}
@@ -97,7 +97,7 @@ func ParseTarget(raw string) (*Target, error) {
 
 	// Endpoint port: explicit > scheme default > 443.
 	if !t.PortExplicit {
-		switch t.Scheme {
+		switch scheme {
 		case "http":
 			t.Port = 80
 		default: // https or bare host
@@ -106,7 +106,7 @@ func ParseTarget(raw string) (*Target, error) {
 	}
 
 	// Protocol rows: explicit scheme wins; else infer from the effective port.
-	switch t.Scheme {
+	switch scheme {
 	case "https":
 		t.Proto = ProtoTLSHTTP
 	case "http":
