@@ -77,7 +77,6 @@ type ProbeResult struct {
 	Iface      string
 	Network    string // connected Wi-Fi SSID, empty when wired/unknown
 	Attempts   []Attempt
-	RTT        time.Duration
 	Detail     string
 	Fix        string
 }
@@ -172,7 +171,7 @@ func ifaceProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
 func internetProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
 	r := ProbeResult{ID: ProbeInternet}
 	conn, sel, attempts, rtt := dialIPs(ctx, internetEndpoints, 443)
-	r.Attempts, r.RTT = attempts, rtt
+	r.Attempts = attempts
 	if conn != nil {
 		defer conn.Close()
 		src, iface := pathIdentity(conn, sel, 443)
@@ -225,7 +224,7 @@ func targetTCPProbe(port int) func(context.Context, map[ProbeID]ProbeResult) Pro
 			return r
 		}
 		conn, sel, attempts, rtt := dialIPs(ctx, addrs, port)
-		r.Attempts, r.RTT = attempts, rtt
+		r.Attempts = attempts
 		if conn != nil {
 			defer conn.Close()
 			src, iface := pathIdentity(conn, sel, port)
@@ -283,8 +282,8 @@ func httpProbe(id ProbeID, host string, port int, scheme string, addressDep Prob
 		tr := &http.Transport{
 			Proxy: nil,
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				conn, selected, attempts, rtt := dialIPs(ctx, addrs, port)
-				r.SelectedIP, r.Attempts, r.RTT = selected, attempts, rtt
+				conn, selected, attempts, _ := dialIPs(ctx, addrs, port)
+				r.SelectedIP, r.Attempts = selected, attempts
 				if conn == nil {
 					if len(attempts) > 0 && attempts[len(attempts)-1].Err != nil {
 						return nil, attempts[len(attempts)-1].Err
