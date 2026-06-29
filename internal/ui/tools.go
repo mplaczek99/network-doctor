@@ -102,9 +102,6 @@ type Fact struct {
 // extractFacts pulls a few stable facts from a finished tool's stdout. Best
 // effort across tool versions; the raw (sanitized) output stays authoritative.
 func extractFacts(toolKey string, stdout []string) []Fact {
-	mk := func(k, v string) Fact {
-		return Fact{Key: k, Value: v}
-	}
 	var facts []Fact
 	switch toolKey {
 	case "c": // curl -w "http_code time_total remote_ip ssl_verify_result"
@@ -112,10 +109,10 @@ func extractFacts(toolKey string, stdout []string) []Fact {
 			f := strings.Fields(stdout[i])
 			if len(f) == 4 {
 				facts = append(facts,
-					mk("http_code", f[0]),
-					mk("time_total", f[1]+"s"),
-					mk("remote_ip", f[2]),
-					mk("ssl_verify", f[3]))
+					Fact{"http_code", f[0]},
+					Fact{"time_total", f[1] + "s"},
+					Fact{"remote_ip", f[2]},
+					Fact{"ssl_verify", f[3]})
 				break
 			}
 		}
@@ -124,12 +121,12 @@ func extractFacts(toolKey string, stdout []string) []Fact {
 			if i := strings.Index(ln, "packet loss"); i >= 0 {
 				end := i + len("packet loss")
 				if j := strings.LastIndex(ln[:i], ","); j >= 0 {
-					facts = append(facts, mk("packet_loss", strings.TrimSpace(ln[j+1:end])))
+					facts = append(facts, Fact{"packet_loss", strings.TrimSpace(ln[j+1 : end])})
 				}
 			}
 			if i := strings.Index(ln, "min/avg/max"); i >= 0 {
 				if eq := strings.Index(ln, "="); eq >= 0 {
-					facts = append(facts, mk("rtt", strings.TrimSpace(ln[eq+1:])))
+					facts = append(facts, Fact{"rtt", strings.TrimSpace(ln[eq+1:])})
 				}
 			}
 		}
@@ -142,7 +139,7 @@ func extractFacts(toolKey string, stdout []string) []Fact {
 			}
 		}
 		if len(as) > 0 {
-			facts = append(facts, mk("A_records", strings.Join(as, ", ")))
+			facts = append(facts, Fact{"A_records", strings.Join(as, ", ")})
 		}
 	}
 	return facts
