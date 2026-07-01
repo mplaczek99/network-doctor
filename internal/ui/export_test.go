@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -24,7 +25,10 @@ func TestExportSanitizesAndIndents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	// Windows has no POSIX permission bits (Go maps only the read-only
+	// attribute and reports 0666 for writable files); 0600 is only
+	// enforceable — and only meaningful — on Unix.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Errorf("mode = %v, want 0600", info.Mode().Perm())
 	}
 	data, _ := os.ReadFile(path)
