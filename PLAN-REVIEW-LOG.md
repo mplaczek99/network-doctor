@@ -1,107 +1,96 @@
-# Plan Review Log: KISS simplification pass on network-doctor
+# Plan Review Log: Cross-platform support (Linux + macOS + Windows)
 Act 1 (grill) complete — plan locked with the user. MAX_ROUNDS=5.
 
 ## Round 1 — Codex
-1. **Exit-code contract is already false:** deferred quit returns `*model` (model.go:264), but `ExitCode` accepts only `model` (app.go:20), producing exit 1 in toolbox mode after quitting an active tool.
-   Fix: Resolve the value/pointer inconsistency and add an `ExitCode` regression test for deferred quit before freezing behavior.
-2. **Candidate 2's "single assignment" changes observable behavior:** failed launches currently retain selected prior fields such as `jobDropped` and sometimes `facts` (model.go:293); zeroing the struct removes them.
-   Fix: Specify every job-state transition and explicitly decide whether stale-field cleanup is an authorized bug fix or behavior that must be preserved.
-3. **Candidate 1 introduces mutable slice aliasing:** `staticTool` returns its captured variadic `args` slice repeatedly, whereas every current `Build` call allocates a fresh slice.
-   Fix: Return `slices.Clone(args)` or `append([]string(nil), args...)` from the helper.
-4. **The claimed tool coverage is inaccurate:** only ping and curl construction are asserted; exact argv/env/display for `ip`, `ss`, `dig`, `traceroute`, and `mtr` are untested.
-   Fix: Add a table-driven test covering exact `Bin`, argv, env, and display for all seven tools, including repeated-build slice independence.
-5. **The proof gate cannot establish "byte-identical" behavior:** generic build/test/race checks and one happy-path manual run do not cover failed launch, cancellation, timeout, pending replacement, export, or dropped-output rendering—the exact surface Candidate 2 changes.
-   Fix: Add deterministic before/after golden tests for job views and exports across all job lifecycle states.
-6. **The clean-tree requirement is impossible as written:** `PLAN.md` and `PLAN-REVIEW-LOG.md` are already untracked.
-   Fix: Define cleanliness relative to the starting porcelain snapshot or require the plan artifacts to be committed first.
-7. **Repository-required verification is omitted:** the plan excludes `gofmt`, `go vet`, and the mandated post-change `graphify update .`.
-   Fix: Add formatting, vetting, and graph refresh to each candidate's verification checklist.
-8. **Candidate 2 leaves its schema unresolved:** "pick" among `jb`, `jobState`, and related naming pushes a consequential ownership decision into implementation while claiming the plan is locked.
-   Fix: Specify the exact type, field name, zero-state invariant, and which fields remain outside it before implementation.
+- **Blocker:** [jobs.go](/home/mplaczek/network-doctor/internal/ui/jobs.go:99) uses Unix-only `Setpgid`, `Getpgid`, and signals, so Windows will not compile. **Fix:** split process setup/cancellation into Unix and Windows build-tagged files, with Windows Job Object or `Process.Kill` handling.
+
+- **Blocker:** `pathping` commonly exceeds the global 12-second timeout in [jobs.go](/home/mplaczek/network-doctor/internal/ui/jobs.go:76), guaranteeing premature termination. **Fix:** add a per-tool timeout field and give `pathping` a duration consistent with its flags.
+
+- **High:** Windows command output uses an OEM code page, while `textsafe.Clean` drops invalid UTF-8; localized output and non-ASCII SSIDs can be corrupted. **Fix:** decode Windows subprocess output using the active code page before parsing or sanitizing.
+
+- **High:** The `netsh` and `nslookup` parsers rely on localized labels (`Name`, `SSID`, `Address`, `Average`); “stable in practice” is not a correctness strategy. **Fix:** use locale-independent output/API mechanisms or explicitly document English-only support and test representative locales.
+
+- **High:** The proposed `nslookup` parser can miss normal Windows output using `Addresses:` followed by indented continuation addresses. **Fix:** model the entire post-`Name:` stanza and validate every candidate with `net.ParseIP(...).To4()`.
+
+- **High:** Falling back to the first SSID when the requested interface is not matched can report another adapter’s network. **Fix:** return empty when named interface blocks exist but none matches; only fallback when the output has no usable interface identities.
+
+- **Medium:** macOS `route` may return `link#N` or another non-IP gateway, but the plan does not require validation. **Fix:** accept gateway values only when `net.ParseIP(value).To4()` succeeds.
+
+- **Medium:** Windows command displays remain POSIX-formatted (`LC_ALL=C`, single-quote escaping), so exported and shown commands are not copy-pasteable. **Fix:** make display rendering GOOS-aware or omit environment prefixes and shell quoting from Windows displays.
+
+- **Medium:** Gateway and SSID failures are silently collapsed into empty values, hiding missing executables, timeouts, permissions, and parser drift. **Fix:** preserve a sanitized diagnostic reason in probe details or debug/export output without failing the probe.
+
+- **Medium:** Pure parser fixtures do not verify command lookup, deadline cancellation, encoding, or Windows process termination. **Fix:** add injectable command runners plus platform-specific wrapper and cancellation tests in CI.
+
+- **Low:** The claim that unmatched build tags leave “Linux as default” is false; unsupported GOOS targets get undefined `ssid` and `defaultRoute`. **Fix:** add an `!linux && !darwin && !windows` stub or state explicitly that other targets intentionally fail to build.
 
 VERDICT: REVISE
+### Claude's response (round 1)
+Accepted (plan revised):
+- Both blockers verified in source and fixed in plan: jobs.go process-group code split into `procgroup_unix.go` / `procgroup_windows.go` (Windows: no-op setup + `Process.Kill()`; Job Objects named as upgrade path — Windows tool set spawns no descendant trees); per-tool `Timeout` field, pathping = 90 s.
+- nslookup parsing replaced with locale-independent strategy: split on first blank line (skips resolver stanza), collect all tokens where `net.ParseIP(tok).To4() != nil` — also resolves the `Addresses:` continuation-line finding.
+- netsh SSID selection: one SSID → use it; multiple → require iface Name match, else empty (never report another adapter's network).
+- macOS gateway validated with `net.ParseIP(v).To4()` (rejects `link#N`).
+- Display strings GOOS-aware: Windows drops `LC_ALL=C ` prefix, uses double-quote quoting.
+- Unsupported-GOOS stub file added (`!linux && !darwin && !windows`) — plan's earlier "Linux remains default" claim was wrong, corrected.
+- CI gains per-OS real-exec smoke tests (no panic, honors deadline) covering lookup/cancel/kill paths.
 
-### Claude's response
-Verified every finding against the source before acting (final arbiter; Codex advises).
-
-- **#1 — accepted as a finding, rejected as an in-scope fix.** Confirmed real: `runPending`
-  has a pointer receiver and returns `*model`; `ExitCode` only asserts `final.(model)`;
-  `asModelP`'s own comment documents the `*model` return; `TestDeferredQuit` never calls
-  `ExitCode`, so the defect is untested. But fixing it changes an exit code → violates the
-  no-behavior-change contract. PLAN now **freezes and preserves** this behavior, documents
-  it in Risks, forbids Candidate 2 from altering it, and raises the fix to the user as a
-  separate decision.
-- **#2 — accepted.** Confirmed current update paths are partial (failed launch leaves stale
-  `dropped`/`start`; `doRerun` resets 5 of 9 fields). Candidate 2 rewritten as a *pure
-  mechanical field rename* that preserves every partial update exactly; explicitly forbids
-  `m.job = jobState{}` where current code is partial. Honestly noted this shrinks C2's ROI.
-- **#3 — accepted.** Helper now returns `slices.Clone(args)` for per-call slice independence.
-- **#4 — accepted.** Confirmed `tools_test.go` only tests `extractFacts`/`shellArgs`.
-  C1 now must add a table-driven test of `Bin`/argv/env/display for all 7 tools + slice
-  independence, in the same commit, as the refactor's safety net.
-- **#5 — accepted, scaled down.** No golden-file framework (over-engineering); instead a
-  precondition commit adds plain `testing` assertions pinning `jobView()` + `exportReport()`
-  across done/canceled/failed-launch/dropped>0 states before Candidate 2.
-- **#6 — accepted.** "Clean tree" now defined: commit plan artifacts first, then clean =
-  empty `git status --porcelain` (graphify-out and binary are gitignored).
-- **#7 — accepted.** Gate now: `gofmt -l`, `go vet`, build, test, `-race`, then
-  `graphify update .` (confirmed mandated by AGENTS.md + CLAUDE.md).
-- **#8 — accepted.** `jobState` schema pinned: exact type, fields, the `job jobState` field
-  name, `activeJob` stays outside, and the zero-value invariant (`jobState{}` == initial state).
+Rejected (with reasons):
+- Full OEM code-page transcoding (x/text + GetOEMCP): display-only corruption risk on non-English systems for garnish-level data; all load-bearing parsing made locale-independent instead; limitation documented in README. (Codex's own alternative fix — "explicitly document English-only support" — adopted for Windows ping facts.)
+- Injectable command-runner abstraction: interface with one implementation for ~10-line wrappers; real-exec CI smoke tests cover the same surface without the abstraction.
+- Plumbing gateway/SSID failure reasons into probe details/export: both values are cosmetic garnish whose absence is self-evident and indistinguishable-by-design from the legitimate empty state; err returns exist in signatures if ever needed.
 
 ## Round 2 — Codex
-Prior findings #1–#4, #6–#8 explicitly addressed. Remaining issues:
-1. Candidate 2 no longer clears its own KISS bar: it retains all nine fields and partial-update complexity while adding a type, nesting, and broad churn.
-   Fix: Drop Candidate 2 and finish after Candidate 1.
-2. Its proposed tests do not pin the frozen stale-field semantics: ordinary failed-launch tests starting from zero state cannot detect accidental full resets.
-   Fix: Seed sentinel values and assert exact before/after state for rerun, unavailable binary, start failure, successful launch, and completion.
-3. "Byte-for-byte" export verification remains underspecified because exports contain the current timestamp.
-   Fix: Normalize/inject time and compare the complete export body, not selected substrings.
+Most prior findings are addressed, but material issues remain:
+
+- **Blocker, newly found:** `--toolbox` leaves `m.ctx == nil`; launching a tool calls `context.WithTimeout(nil, ...)` and panics. **Fix:** initialize the context in toolbox mode or make `startTool` substitute `context.Background()`.
+- **High:** Single-SSID fallback can label an Ethernet, VPN, or virtual interface with an unrelated Wi-Fi SSID. **Fix:** require interface-name matching whenever interface identity is available; otherwise return empty.
+- **High:** OEM-code-page handling remains rejected, so non-ASCII SSIDs and the core raw-output pane can be corrupted despite the "run correctly on Windows" goal. **Fix:** decode Windows subprocess output before sanitization, at least for SSID and streamed tool output.
+- **Medium:** One double-quote renderer cannot be both cmd.exe- and PowerShell-pasteable; curl's `%{...}` format is particularly unsafe under cmd expansion. **Fix:** target one documented shell—preferably PowerShell—and implement its exact quoting rules.
+- **Medium:** `//go:build unix` plus a Windows file still leaves non-Unix/non-Windows targets without `setProcGroup`/`killGroup`, contradicting the unsupported-GOOS compile promise. **Fix:** add a `!unix && !windows` process fallback or withdraw that promise.
+- **Medium:** Real built-in smoke tests cannot reliably prove deadline cancellation because the commands may finish before the deadline. **Fix:** use the existing re-executed test helper to deterministically test cancellation on every CI OS; reserve live commands for availability smoke tests.
 
 VERDICT: REVISE
 
-### Claude's response
-- **#1 — accepted.** This is the cross-model check working: Codex held the plan to its own
-  net-complexity bar. After the r1 #2 behavior-preservation constraint, Candidate 2 adds a
-  type + nesting + churn while preserving all nine fields and their partial-update logic →
-  no net complexity removed → fails the bar. **Candidate 2 dropped.** The pass is now
-  Candidate 1 only. Flagged as a deviation from the user's two-candidate sign-off, for the
-  user to confirm or override at the final gate.
-- **#2 — moot, accepted as consequence.** The stale-field pinning tests existed only to
-  de-risk Candidate 2's rename. With C2 dropped, adding tests for behavior nothing changes
-  would be scope creep; they are dropped with C2 and noted as returning only if C2 revives.
-- **#3 — accepted.** Confirmed `exportReport` embeds `time.Now()` (RFC3339) and a
-  timestamped no-clobber filename, so literal byte-identity is impossible. Contract wording
-  tightened to "frozen modulo the per-run timestamp and filename." No test added (no
-  candidate touches export now).
+### Claude's response (round 2)
+Accepted (plan revised):
+- Toolbox nil-ctx blocker verified in source (model.go: ctx only set on scheduleMsg; handleKey launches tools unguarded) — pre-existing panic, fixed in plan via lazy ctx init in `launchTool` + regression test.
+- SSID selection rewritten: blank-line block split + *value* match on iface (locale-independent, no reliance on localized `Name` label); single-SSID fallback dropped entirely — Ethernet/VPN ifaces can never acquire a Wi-Fi SSID since netsh lists only WLAN interfaces and non-matching output returns "".
+- Windows display quoting targets PowerShell explicitly (single-quote literal, `'` doubled — keeps curl `%{…}` inert); cmd.exe paste explicitly unsupported and documented.
+- Added `!unix && !windows` procgroup stub — compile-everywhere claim now holds program-wide.
+- Cancellation testing moved to the existing re-exec helper (`jobs_test.go` startHelper) run untagged on all three CI OSes; live-command tests demoted to availability smoke only.
+
+Rejected (held from round 1, reason strengthened):
+- OEM code-page transcoding: cannot recover non-OEM-representable SSIDs (netsh itself emits `?`); only benefit is softer mangling of localized letters in a display-only pane on non-English Windows; codepage→decoder dependency disproportionate. Compromise adopted instead: sanitizer must visibly *replace* (not silently delete) invalid bytes; README documents the limitation. All load-bearing parsing is locale-independent by construction.
 
 ## Round 3 — Codex
-Prior findings addressed or made moot by dropping Candidate 2.
-New issue: the all-tools test omits exact `Key`, `Name`, and ordering, although Candidate 1 rewrites those user-visible values and existing uniqueness tests would not catch swaps or renamed labels.
-   Fix: Assert the complete ordered tool definitions: `Key`, `Name`, `Bin`, argv, env, display, and slice independence.
-Also remove stale "see Candidate 2" references now that it is rejected.
+Prior blockers are substantially addressed. New remaining issues:
+
+- **High:** PowerShell 5.1 aliases `curl` to `Invoke-WebRequest`, so the advertised copy-paste command will reject curl flags. **Fix:** use and display `curl.exe` on Windows.
+- **High:** Numeric matching across all `route print -4` output can select an inactive Persistent Route. **Fix:** require the five-column active-route shape, including a valid IPv4 interface column, and fixture-test competing persistent defaults.
+- **Medium:** The plan changes concurrent subprocess cancellation but omits the repository's race-test gate. **Fix:** run `go test -race ./...` at least on Linux CI and before handoff.
+- **Medium:** Replacing invalid UTF-8 globally in `textsafe.Clean` changes Linux/macOS banner and error sanitization too. **Fix:** perform visible byte replacement at the Windows subprocess boundary, or explicitly test and document the global behavior change.
+
+The OEM-code-page limitation remains unresolved but is now an explicit, documented tradeoff rather than an accidental omission.
 
 VERDICT: REVISE
 
-### Claude's response
-- **Test scope — accepted.** `staticTool(key, name, bin, args...)` sets `Key`/`Name`, which
-  are user-visible (hotkeys, labels) and frozen, and `toolsFor`'s order is the toolbox
-  display order (also frozen). Test spec tightened: pin the complete ordered tool list from
-  `toolsFor` (no-target and with-host sets), asserting Key/Name/Bin/argv/env/display per
-  tool in order, plus slice independence; derive expected values from current literals
-  before refactoring.
-- **Stale refs — accepted.** Removed the now-irrelevant frozen-contract bullet about
-  per-path job-state semantics (it existed only because Candidate 2 would touch those
-  paths; nothing in this pass does). Reworded the exit-code Risks note: no code in this
-  pass goes near `runPending`/`Update`, so the defect is preserved by inaction. Remaining
-  "Candidate 2" mentions are intentional (scope-change note, Rejected entry, Risks, Done).
+### Claude's response (round 3)
+All four accepted, nothing rejected:
+- Windows `c` tool uses and displays `curl.exe` (bypasses PS 5.1 `curl` alias).
+- `route print -4` parsing now requires the five-column Active Routes shape (gateway AND interface columns parse as IPv4, metric numeric) — structurally excludes the Persistent Routes section without locale-dependent header matching; fixture added for a competing persistent default.
+- CI Linux leg gains `go test -race ./...`; also run locally before handoff.
+- Invalid-UTF-8 replacement scoped to the Windows subprocess boundary only (`strings.ToValidUTF8` on streamed lines + wrapper output when GOOS==windows); `textsafe.Clean` and Unix sanitization semantics untouched.
 
 ## Round 4 — Codex
-All prior material findings are addressed. Candidate 2 is removed, tool tests cover complete ordered definitions, slice ownership is preserved, and verification/clean-tree requirements are explicit.
-Minor wording only: "single-file change" should say two-file change because tests also change.
+All prior material findings are addressed:
+
+- Windows uses `curl.exe`.
+- Route parsing excludes persistent routes structurally.
+- Race testing is included.
+- Invalid UTF-8 replacement is Windows-boundary-only.
+- Toolbox context, cancellation, SSID association, quoting, timeouts, and build tags are covered.
+
+No new material flaws found. The documented OEM/localization limitations are explicit, bounded tradeoffs.
 
 VERDICT: APPROVED
-
-### Claude's response
-- Accepted the wording fix: Candidate 1 touches `tools.go` and `tools_test.go` (two files).
-- Converged at round 4 of 5. Plan locked for user sign-off.

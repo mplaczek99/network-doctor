@@ -3,27 +3,31 @@ package ui
 import "testing"
 
 func TestToolsFor(t *testing.T) {
-	// Generic mode: target-independent tools only (ip, ss).
-	if got := len(toolsFor(nil)); got != 2 {
-		t.Errorf("toolsFor(nil) = %d, want 2 (ip, ss)", got)
-	}
-	// Target mode: + ping, dig, curl, traceroute, mtr.
-	if got := len(toolsFor(mustTarget(t, "github.com"))); got != 7 {
-		t.Errorf("toolsFor(target) = %d, want 7", got)
+	for _, goos := range []string{"linux", "darwin", "windows"} {
+		// Generic mode: target-independent tools only (routes, sockets).
+		if got := len(toolsFor(nil, goos)); got != 2 {
+			t.Errorf("%s toolsFor(nil) = %d, want 2", goos, got)
+		}
+		// Target mode: + ping, dns, curl, trace, path-quality.
+		if got := len(toolsFor(mustTarget(t, "github.com"), goos)); got != 7 {
+			t.Errorf("%s toolsFor(target) = %d, want 7", goos, got)
+		}
 	}
 }
 
 func TestToolHotkeysUnique(t *testing.T) {
-	seen := map[string]bool{}
 	reserved := map[string]bool{"q": true, "r": true, "e": true, "j": true, "k": true}
-	for _, tool := range toolsFor(mustTarget(t, "github.com")) {
-		if seen[tool.Key] {
-			t.Errorf("duplicate tool hotkey %q", tool.Key)
+	for _, goos := range []string{"linux", "darwin", "windows"} {
+		seen := map[string]bool{}
+		for _, tool := range toolsFor(mustTarget(t, "github.com"), goos) {
+			if seen[tool.Key] {
+				t.Errorf("%s: duplicate tool hotkey %q", goos, tool.Key)
+			}
+			if reserved[tool.Key] {
+				t.Errorf("%s: tool hotkey %q collides with a reserved key", goos, tool.Key)
+			}
+			seen[tool.Key] = true
 		}
-		if reserved[tool.Key] {
-			t.Errorf("tool hotkey %q collides with a reserved key", tool.Key)
-		}
-		seen[tool.Key] = true
 	}
 }
 

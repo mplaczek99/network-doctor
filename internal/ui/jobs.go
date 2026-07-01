@@ -5,9 +5,10 @@ import (
 	"context"
 	"io"
 	"os/exec"
+	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -90,13 +91,16 @@ type job struct {
 
 // startTool launches name+args as a process-group leader, streaming sanitized
 // output lines and a guaranteed terminal event on job.ch. env nil = inherit.
+// timeout <= 0 means the default toolTimeout.
 // Returns the job and the first wait command to feed into Bubble Tea.
-func startTool(parent context.Context, gen int, id, name string, args, env []string) (*job, tea.Cmd, error) {
-	ctx, cancel := context.WithTimeout(parent, toolTimeout)
+func startTool(parent context.Context, gen int, id, name string, args, env []string, timeout time.Duration) (*job, tea.Cmd, error) {
+	if timeout <= 0 {
+		timeout = toolTimeout
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = env
-	// Own process group so we can kill descendants (e.g. mtr-packet).
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setProcGroup(cmd) // own process group (Unix) so we can kill descendants (e.g. mtr-packet)
 	cmd.Cancel = func() error { return killGroup(cmd) }
 	cmd.WaitDelay = 2 * time.Second // don't hang on Wait if a child holds the pipe
 
@@ -155,7 +159,7 @@ func streamReader(r io.Reader, stream Stream, id string, gen int, ch chan<- tea.
 		line, err := readCappedLine(br)
 		if line != "" {
 			select {
-			case ch <- ToolOutputMsg{JobID: id, Generation: gen, Stream: stream, Line: sanitize(line)}:
+			case ch <- ToolOutputMsg{JobID: id, Generation: gen, Stream: stream, Line: sanitize(winSafe(line))}:
 			default:
 				atomic.AddInt64(dropped, 1)
 			}
@@ -204,13 +208,12 @@ func classifyJob(ctx context.Context, werr error) JobStatus {
 	}
 }
 
-// killGroup SIGKILLs the whole process group so descendants die too.
-func killGroup(cmd *exec.Cmd) error {
-	if cmd.Process == nil {
-		return nil
+// winSafe makes invalid UTF-8 from Windows consoles (OEM code page) visible as
+// '?' instead of letting the sanitizer drop it silently. Windows subprocess
+// boundary only — Unix sanitization semantics are untouched.
+func winSafe(s string) string {
+	if runtime.GOOS == "windows" {
+		return strings.ToValidUTF8(s, "?")
 	}
-	if pgid, err := syscall.Getpgid(cmd.Process.Pid); err == nil {
-		return syscall.Kill(-pgid, syscall.SIGKILL)
-	}
-	return cmd.Process.Kill()
+	return s
 }

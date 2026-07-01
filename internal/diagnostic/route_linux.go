@@ -4,6 +4,7 @@ package diagnostic
 
 import (
 	"bufio"
+	"context"
 	"encoding/hex"
 	"io"
 	"net"
@@ -17,8 +18,9 @@ const rtfUp = 0x1
 
 // defaultRoute opens the kernel IPv4 routing table and returns the gateway of
 // the default route, if any. An open/read error is returned as err; a readable
-// table with no default route is (\"\", false, nil).
-func defaultRoute() (ip string, found bool, err error) {
+// table with no default route is (\"\", false, nil). ctx is unused — /proc
+// reads don't block (shared signature with the exec-based macOS/Windows impls).
+func defaultRoute(_ context.Context) (ip string, found bool, err error) {
 	f, err := os.Open("/proc/net/route")
 	if err != nil {
 		return "", false, err

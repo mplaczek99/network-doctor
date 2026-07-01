@@ -3,6 +3,7 @@
 package diagnostic
 
 import (
+	"context"
 	"syscall"
 	"unsafe"
 
@@ -31,7 +32,9 @@ type iwreq struct {
 // ssid returns the Wi-Fi network name for iface, or "" if it isn't wireless,
 // isn't associated, or the kernel doesn't support wireless extensions. The
 // result is untrusted (an AP broadcasts its own SSID) so it is sanitized.
-func ssid(iface string) string {
+// ctx is unused — the ioctl doesn't block (shared signature with the
+// exec-based macOS/Windows impls).
+func ssid(_ context.Context, iface string) string {
 	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_DGRAM, 0)
 	if err != nil {
 		return ""

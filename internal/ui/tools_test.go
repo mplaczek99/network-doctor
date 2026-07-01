@@ -2,7 +2,9 @@ package ui
 
 import (
 	"slices"
+	"strings"
 	"testing"
+	"time"
 )
 
 // TestToolsForDefinitions pins the complete, ordered tool list returned by
@@ -38,7 +40,7 @@ func TestToolsForDefinitions(t *testing.T) {
 		{"m", "mtr", "mtr", []string{"--report", "--report-cycles", "5", "github.com"}, "mtr --report --report-cycles 5 github.com", false},
 	}
 
-	got := toolsFor(tgt)
+	got := toolsFor(tgt, "linux")
 	if len(got) != len(wantHost) {
 		t.Fatalf("toolsFor(host) returned %d tools, want %d", len(got), len(wantHost))
 	}
@@ -64,7 +66,7 @@ func TestToolsForDefinitions(t *testing.T) {
 	}
 
 	// No-target set: only the target-independent tools, same order.
-	generic := toolsFor(nil)
+	generic := toolsFor(nil, "linux")
 	wantGeneric := []string{"i", "s"}
 	if len(generic) != len(wantGeneric) {
 		t.Fatalf("toolsFor(nil) returned %d tools, want %d", len(generic), len(wantGeneric))
@@ -94,7 +96,7 @@ func factVal(facts []Fact, key string) (string, bool) {
 
 func TestExtractCurl(t *testing.T) {
 	stdout := []string{"200 0.123456 140.82.112.3 0"}
-	facts := extractFacts("c", stdout)
+	facts := extractFacts("c", "linux", stdout)
 	if v, ok := factVal(facts, "http_code"); !ok || v != "200" {
 		t.Errorf("http_code = %q (%v), want 200", v, ok)
 	}
@@ -112,7 +114,7 @@ func TestExtractPing(t *testing.T) {
 		"4 packets transmitted, 4 received, 0% packet loss, time 3005ms",
 		"rtt min/avg/max/mdev = 1.0/2.0/3.0/0.5 ms",
 	}
-	facts := extractFacts("p", stdout)
+	facts := extractFacts("p", "linux", stdout)
 	if v, ok := factVal(facts, "packet_loss"); !ok || v != "0% packet loss" {
 		t.Errorf("packet_loss = %q, want '0%% packet loss'", v)
 	}
@@ -127,7 +129,7 @@ func TestExtractDig(t *testing.T) {
 		"github.com.\t60\tIN\tA\t140.82.112.3",
 		"github.com.\t60\tIN\tA\t140.82.113.4",
 	}
-	facts := extractFacts("d", stdout)
+	facts := extractFacts("d", "linux", stdout)
 	v, ok := factVal(facts, "A_records")
 	if !ok || v != "140.82.112.3, 140.82.113.4" {
 		t.Errorf("A_records = %q, want both IPs", v)
@@ -139,5 +141,169 @@ func TestShellArgsQuotes(t *testing.T) {
 	want := `-w '%{http_code}\n' https://x`
 	if got != want {
 		t.Errorf("shellArgs = %q, want %q", got, want)
+	}
+}
+
+// psArgs targets PowerShell: single-quote literals, embedded ' doubled, and
+// %{…} quoted so curl's format string stays inert.
+func TestPsArgsQuotes(t *testing.T) {
+	got := psArgs([]string{"-w", `%{http_code}\n`, "it's", "https://x"})
+	want := `-w '%{http_code}\n' 'it''s' https://x`
+	if got != want {
+		t.Errorf("psArgs = %q, want %q", got, want)
+	}
+}
+
+func toolByKey(t *testing.T, tools []Tool, key string) Tool {
+	t.Helper()
+	for _, tl := range tools {
+		if tl.Key == key {
+			return tl
+		}
+	}
+	t.Fatalf("tool %q not offered", key)
+	return Tool{}
+}
+
+// The Windows table: OS built-ins (route print, netstat -ano, ping -n,
+// nslookup, curl.exe, tracert, pathping), NUL instead of /dev/null, a
+// PowerShell-target display without the LC_ALL prefix, and pathping's own
+// 90 s timeout.
+func TestToolsForWindows(t *testing.T) {
+	tgt := mustTarget(t, "github.com")
+	tools := toolsFor(tgt, "windows")
+
+	wantBins := map[string]string{
+		"i": "route", "s": "netstat", "p": "ping", "d": "nslookup",
+		"c": "curl.exe", "t": "tracert", "m": "pathping",
+	}
+	if len(tools) != len(wantBins) {
+		t.Fatalf("windows table has %d tools, want %d", len(tools), len(wantBins))
+	}
+	for key, bin := range wantBins {
+		if got := toolByKey(t, tools, key).Bin; got != bin {
+			t.Errorf("windows %q Bin = %q, want %q", key, got, bin)
+		}
+	}
+
+	if args, _, _ := toolByKey(t, tools, "p").Build(tgt); !slices.Equal(args, []string{"-n", "4", "-w", "2000", "github.com"}) {
+		t.Errorf("windows ping argv = %q", args)
+	}
+
+	curl := toolByKey(t, tools, "c")
+	args, env, display := curl.Build(tgt)
+	if !slices.Contains(args, "NUL") || slices.Contains(args, "/dev/null") {
+		t.Errorf("windows curl must write to NUL, argv = %q", args)
+	}
+	if !strings.HasPrefix(display, "curl.exe ") || strings.Contains(display, "LC_ALL") {
+		t.Errorf("windows curl display = %q, want curl.exe prefix without LC_ALL", display)
+	}
+	if !strings.Contains(display, `'%{http_code}`) {
+		t.Errorf("windows curl display must PowerShell-quote the -w format: %q", display)
+	}
+	if len(env) == 0 || env[len(env)-1] != "LC_ALL=C" {
+		t.Errorf("curl env must still set LC_ALL=C (harmless on Windows), got tail of %d entries", len(env))
+	}
+
+	pp := toolByKey(t, tools, "m")
+	if pp.Timeout != 90*time.Second {
+		t.Errorf("pathping Timeout = %v, want 90s", pp.Timeout)
+	}
+	if args, _, _ := pp.Build(tgt); !slices.Equal(args, []string{"-h", "20", "-q", "5", "-p", "100", "-w", "500", "github.com"}) {
+		t.Errorf("pathping argv = %q", args)
+	}
+
+	if args, _, _ := toolByKey(t, tools, "t").Build(tgt); !slices.Equal(args, []string{"-w", "2000", "-h", "20", "github.com"}) {
+		t.Errorf("tracert argv = %q", args)
+	}
+	if args, _, _ := toolByKey(t, tools, "i").Build(tgt); !slices.Equal(args, []string{"print", "-4"}) {
+		t.Errorf("route print argv = %q", args)
+	}
+	if args, _, _ := toolByKey(t, tools, "s").Build(tgt); !slices.Equal(args, []string{"-ano"}) {
+		t.Errorf("netstat argv = %q", args)
+	}
+}
+
+// The macOS table: netstat for routes/sockets, ping without -W (BSD ping's -W
+// is milliseconds), dig/curl/traceroute/mtr as on Linux.
+func TestToolsForDarwin(t *testing.T) {
+	tgt := mustTarget(t, "github.com")
+	tools := toolsFor(tgt, "darwin")
+
+	if args, _, _ := toolByKey(t, tools, "i").Build(tgt); !slices.Equal(args, []string{"-rn"}) {
+		t.Errorf("darwin routes argv = %q", args)
+	}
+	if args, _, _ := toolByKey(t, tools, "s").Build(tgt); !slices.Equal(args, []string{"-an", "-p", "tcp"}) {
+		t.Errorf("darwin sockets argv = %q", args)
+	}
+	if args, _, _ := toolByKey(t, tools, "p").Build(tgt); !slices.Equal(args, []string{"-c", "4", "github.com"}) {
+		t.Errorf("darwin ping argv = %q (BSD -W must be omitted)", args)
+	}
+	if bin := toolByKey(t, tools, "d").Bin; bin != "dig" {
+		t.Errorf("darwin d = %q, want dig", bin)
+	}
+	if bin := toolByKey(t, tools, "m").Bin; bin != "mtr" {
+		t.Errorf("darwin m = %q, want mtr", bin)
+	}
+	if bin := toolByKey(t, tools, "c").Bin; bin != "curl" {
+		t.Errorf("darwin c = %q, want curl", bin)
+	}
+	if pt := toolByKey(t, tools, "m").Timeout; pt != 0 {
+		t.Errorf("darwin mtr Timeout = %v, want 0 (default)", pt)
+	}
+}
+
+// Every table keeps the same hotkey set so muscle memory transfers across OSes.
+func TestToolTablesSameHotkeys(t *testing.T) {
+	tgt := mustTarget(t, "github.com")
+	want := []string{"i", "s", "p", "d", "c", "t", "m"}
+	for _, goos := range []string{"linux", "darwin", "windows"} {
+		var keys []string
+		for _, tl := range toolsFor(tgt, goos) {
+			keys = append(keys, tl.Key)
+		}
+		if !slices.Equal(keys, want) {
+			t.Errorf("%s hotkeys = %v, want %v", goos, keys, want)
+		}
+	}
+}
+
+// Windows ping facts: "(X% loss)" and "Average = Xms" (English-only, documented).
+func TestExtractPingWindows(t *testing.T) {
+	stdout := []string{
+		"Pinging github.com [140.82.112.3] with 32 bytes of data:",
+		"Reply from 140.82.112.3: bytes=32 time=16ms TTL=52",
+		"    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),",
+		"    Minimum = 15ms, Maximum = 18ms, Average = 16ms",
+	}
+	facts := extractFacts("p", "windows", stdout)
+	if v, ok := factVal(facts, "packet_loss"); !ok || v != "0% loss" {
+		t.Errorf("packet_loss = %q (%v), want '0%% loss'", v, ok)
+	}
+	if v, ok := factVal(facts, "rtt_avg"); !ok || v != "16ms" {
+		t.Errorf("rtt_avg = %q (%v), want 16ms", v, ok)
+	}
+}
+
+// nslookup facts are locale-independent: skip the resolver stanza, then keep
+// every IPv4 token — covers Address:, Addresses:, and indented continuations.
+func TestExtractNslookup(t *testing.T) {
+	stdout := []string{
+		"Server:  router.local",
+		"Address:  192.168.1.1",
+		"",
+		"Non-authoritative answer:",
+		"Name:    github.com",
+		"Addresses:  140.82.112.3",
+		"          140.82.113.4",
+	}
+	facts := extractFacts("d", "windows", stdout)
+	if v, ok := factVal(facts, "A_records"); !ok || v != "140.82.112.3, 140.82.113.4" {
+		t.Errorf("A_records = %q (%v), want both answer IPs and not the resolver's", v, ok)
+	}
+
+	// Resolver-only output (lookup failed before any answer) yields nothing.
+	if got := extractFacts("d", "windows", []string{"Server: r", "Address: 192.168.1.1"}); got != nil {
+		t.Errorf("resolver-only output → %v, want nil", got)
 	}
 }

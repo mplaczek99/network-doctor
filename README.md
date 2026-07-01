@@ -54,7 +54,7 @@ is IPv4-only and bounded by a 4-second timeout.
 
 ## Install
 
-Requires Go 1.26+. **Linux only.**
+Requires Go 1.26+. Runs on **Linux, macOS, and Windows**.
 
 ```sh
 go install github.com/mplaczek99/network-doctor@latest
@@ -99,20 +99,24 @@ greyed out with an install hint. Output is bounded, sanitized (no terminal-escap
 injection from a hostile server), and a few stable facts are extracted on
 completion.
 
-| Key | Tool | Command shape |
-|-----|------|---------------|
-| `i` | `ip route` | `ip route` |
-| `s` | `ss` | `ss -tunp` |
-| `p` | `ping` | `ping -c 4 -W 2 <host>` |
-| `d` | `dig` | `dig +time=2 +tries=1 <host>` |
-| `c` | `curl` | `curl -q -sS --head … -w '…' <url>` (locale-proof facts) |
-| `t` | `traceroute` | `traceroute -w 2 -q 1 -m 20 <host>` |
-| `m` | `mtr` | `mtr --report --report-cycles 5 <host>` |
+The same hotkeys map to each OS's built-in tools:
 
-`ip` and `ss` are target-independent; the rest need a host. Tools are run with an
-argument slice (never a shell string), in their own process group (cancel kills
-descendants too), unprivileged — on a permission error you get the command to
-re-run with `sudo`, never an auto-escalation.
+| Key | Linux | macOS | Windows |
+|-----|-------|-------|---------|
+| `i` | `ip route` | `netstat -rn` | `route print -4` |
+| `s` | `ss -tunp` | `netstat -an -p tcp` | `netstat -ano` |
+| `p` | `ping -c 4 -W 2` | `ping -c 4` | `ping -n 4 -w 2000` |
+| `d` | `dig +time=2 +tries=1` | `dig +time=2 +tries=1` | `nslookup` |
+| `c` | `curl … -w '…'` (locale-proof facts) | same | `curl.exe` (bypasses the PowerShell 5.1 `curl` alias) |
+| `t` | `traceroute -w 2 -q 1 -m 20` | same | `tracert -w 2000 -h 20` |
+| `m` | `mtr --report --report-cycles 5` | same (via brew) | `pathping -h 20 -q 5 -p 100 -w 500` (own 90 s budget) |
+
+The routes/sockets tools are target-independent; the rest need a host. Tools are
+run with an argument slice (never a shell string), in their own process group on
+Unix (cancel kills descendants too), unprivileged — on a permission error you get
+the command to re-run with `sudo`, never an auto-escalation. The displayed
+command is copy-pasteable in a POSIX shell (Linux/macOS) or PowerShell (Windows;
+cmd.exe paste is not supported).
 
 `--toolbox [<host>]` opens straight into the toolbox without auto-running the
 chain (press `r` to run it). With no host, only the target-independent tools are
@@ -130,6 +134,21 @@ offered.
 ```sh
 network-doctor github.com || echo "path to github is broken"
 ```
+
+## Platform support
+
+All probes, the diagnosis engine, and the TUI are pure Go and identical on
+Linux, macOS, and Windows. The platform-specific garnish (default gateway,
+Wi-Fi SSID) uses the kernel directly on Linux (`/proc/net/route`, wireless
+ioctl) and the OS's built-in commands elsewhere (`route`/`networksetup` on
+macOS, `route print`/`netsh wlan` on Windows); when those fail the fields
+degrade to empty rather than failing a probe.
+
+**Windows localization caveat**: console tools emit the OEM code page, so
+non-ASCII localized text in raw tool output shows as visible `?` replacement
+characters, and ping fact extraction (`% loss`, `Average`) works on English
+Windows only. Everything load-bearing (route table cells, the untranslated
+`SSID` label, nslookup addresses) is parsed locale-independently.
 
 ## Roadmap
 
@@ -159,8 +178,8 @@ go test -fuzz=FuzzSanitize -fuzztime=10s   # terminal-escape sanitizer
 The code is split by responsibility:
 
 - `main.go` owns CLI arguments, process I/O, and application startup.
-- `internal/diagnostic` owns target parsing, native probes, Linux route data,
-  and verdict logic without depending on terminal presentation.
+- `internal/diagnostic` owns target parsing, native probes, per-OS route/SSID
+  lookups, and verdict logic without depending on terminal presentation.
 - `internal/ui` owns Bubble Tea state, rendering, tool jobs, and report export.
 - `internal/textsafe` sanitizes untrusted remote and subprocess text shared by
   both layers.

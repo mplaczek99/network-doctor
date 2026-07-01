@@ -40,7 +40,7 @@ func startHelper(t *testing.T, parent context.Context, mode string, extra ...str
 	t.Helper()
 	env := append(os.Environ(), "GO_HELPER=1", "GO_HELPER_MODE="+mode)
 	env = append(env, extra...)
-	j, _, err := startTool(parent, 0, "test-"+mode, os.Args[0], []string{"-test.run=TestHelperProcess"}, env)
+	j, _, err := startTool(parent, 0, "test-"+mode, os.Args[0], []string{"-test.run=TestHelperProcess"}, env, 0)
 	if err != nil {
 		t.Fatalf("startTool: %v", err)
 	}
@@ -94,6 +94,21 @@ func TestJobTimeout(t *testing.T) {
 	parent, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 	j := startHelper(t, parent, "sleep")
+	_, done := drain(t, j.ch)
+	if done.Status != JobTimedOut {
+		t.Errorf("status = %v, want JobTimedOut", done.Status)
+	}
+}
+
+// A per-tool timeout below the parent deadline must govern (pathping's 90 s
+// budget rides the same path in the other direction).
+func TestJobPerToolTimeout(t *testing.T) {
+	env := append(os.Environ(), "GO_HELPER=1", "GO_HELPER_MODE=sleep")
+	j, _, err := startTool(context.Background(), 0, "test-timeout", os.Args[0],
+		[]string{"-test.run=TestHelperProcess"}, env, 300*time.Millisecond)
+	if err != nil {
+		t.Fatalf("startTool: %v", err)
+	}
 	_, done := drain(t, j.ch)
 	if done.Status != JobTimedOut {
 		t.Errorf("status = %v, want JobTimedOut", done.Status)

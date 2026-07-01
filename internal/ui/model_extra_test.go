@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -70,7 +71,7 @@ func TestToolBuildCurlScheme(t *testing.T) {
 	for _, c := range cases {
 		target := mustTarget(t, c.target)
 		var curl Tool
-		for _, tool := range toolsFor(target) {
+		for _, tool := range toolsFor(target, "linux") {
 			if tool.Key == "c" {
 				curl = tool
 				break
@@ -165,10 +166,10 @@ func TestClassifyJob(t *testing.T) {
 }
 
 func TestExtractFactsNone(t *testing.T) {
-	if got := extractFacts("unknown-key", []string{"anything"}); got != nil {
+	if got := extractFacts("unknown-key", "linux", []string{"anything"}); got != nil {
 		t.Errorf("unknown tool key → %v, want nil", got)
 	}
-	if got := extractFacts("c", []string{"only three fields"}); got != nil {
+	if got := extractFacts("c", "linux", []string{"only three fields"}); got != nil {
 		t.Errorf("malformed curl line → %v, want nil", got)
 	}
 }
@@ -180,7 +181,7 @@ func TestExtractFactsNone(t *testing.T) {
 func TestToolBuildCurl(t *testing.T) {
 	tg := mustTarget(t, "https://example.com:8443")
 	var curl Tool
-	for _, tl := range toolsFor(tg) {
+	for _, tl := range toolsFor(tg, "linux") {
 		if tl.Key == "c" {
 			curl = tl
 		}
@@ -203,7 +204,7 @@ func TestToolBuildCurl(t *testing.T) {
 func TestToolBuildPingHost(t *testing.T) {
 	tg := mustTarget(t, "example.com")
 	var ping Tool
-	for _, tl := range toolsFor(tg) {
+	for _, tl := range toolsFor(tg, "linux") {
 		if tl.Key == "p" {
 			ping = tl
 		}
@@ -354,6 +355,35 @@ func TestWindowSize(t *testing.T) {
 	if nm.width != 120 || nm.height != 40 {
 		t.Errorf("size = %dx%d, want 120x40", nm.width, nm.height)
 	}
+}
+
+// Launching a tool in toolbox mode before the first 'r' must lazily create the
+// generation context instead of panicking on a nil parent (pre-existing bug,
+// Codex round 2).
+func TestToolboxLaunchBeforeRun(t *testing.T) {
+	m := newModel(nil)
+	m.toolbox = true
+	if m.ctx != nil {
+		t.Fatal("precondition: toolbox model must start with a nil ctx")
+	}
+	tool := Tool{Key: "z", Name: "helper", Bin: os.Args[0],
+		Build: func(*Target) ([]string, []string, string) {
+			return []string{"-test.run=TestHelperProcess"},
+				append(os.Environ(), "GO_HELPER=1", "GO_HELPER_MODE=lines", "GO_HELPER_N=1"),
+				"helper"
+		}}
+	cmd := (&m).launchTool(tool) // must not panic
+	if cmd == nil {
+		t.Fatalf("launchTool returned no cmd (jobErr=%v)", m.jobErr)
+	}
+	if m.ctx == nil {
+		t.Fatal("launchTool must lazily initialize the context")
+	}
+	_, done := drain(t, m.activeJob.ch)
+	if done.Status != JobDone {
+		t.Errorf("status = %v, want JobDone", done.Status)
+	}
+	m.clearCancel()
 }
 
 // launchTool on a missing binary fails gracefully with an install hint and no cmd.

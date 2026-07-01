@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -159,12 +160,12 @@ func ifaceProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
 		}
 		if ifi.Flags&net.FlagUp != 0 && ifi.Flags&net.FlagRunning != 0 {
 			r.Status, r.Iface, r.Detail = StatusPass, ifi.Name, "interface "+ifi.Name+" is up"
-			r.Network = ssid(ifi.Name)
+			r.Network = ssid(ctx, ifi.Name)
 			return r
 		}
 	}
 	r.Status = StatusFail
-	r.Detail, r.Fix = "no interface up", "bring up an interface (cable/Wi-Fi) or `ip link set <iface> up`"
+	r.Detail, r.Fix = "no interface up", ifaceFix(runtime.GOOS)
 	return r
 }
 
@@ -177,7 +178,7 @@ func internetProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
 		src, iface := pathIdentity(conn, sel, 443)
 		r.Status, r.SelectedIP, r.Source, r.Iface = StatusPass, sel, src, iface
 		r.Detail = fmt.Sprintf("direct egress via %s in %dms (src %s %s)", sel, rtt.Milliseconds(), src, iface)
-		if gw, found, _ := defaultRoute(); found {
+		if gw, found, _ := defaultRoute(ctx); found {
 			r.Detail += "; default route via " + gw
 		}
 		return r
@@ -201,7 +202,7 @@ func dnsProbe(host string, literal bool, litIP net.IP) func(context.Context, map
 		if err != nil {
 			r.Status = StatusFail
 			r.Detail = "cannot resolve " + host + ": " + textsafe.Clean(err.Error())
-			r.Fix = "name resolution failing — check /etc/resolv.conf / DNS"
+			r.Fix = dnsFix(runtime.GOOS)
 			return r
 		}
 		if len(ips) == 0 {

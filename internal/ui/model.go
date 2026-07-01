@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 
@@ -111,7 +112,7 @@ func newModel(t *Target) model {
 		byID:      byID,
 		results:   map[ProbeID]ProbeResult{},
 		started:   map[ProbeID]bool{},
-		tools:     toolsFor(t),
+		tools:     toolsFor(t, runtime.GOOS),
 		jobStatus: JobQueued,
 		spinner:   sp,
 		width:     100,
@@ -178,7 +179,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.jobStatus, m.jobDropped, m.activeJob = msg.Status, msg.Dropped, nil
-		m.facts = extractFacts(m.jobToolKey, m.jobOut)
+		m.facts = extractFacts(m.jobToolKey, runtime.GOOS, m.jobOut)
 		if m.pending != nil {
 			p := m.pending
 			m.pending = nil
@@ -289,7 +290,12 @@ func (m *model) launchTool(tool Tool) tea.Cmd {
 	wasTicking := m.spinnerActive()
 	args, env, display := tool.Build(m.target)
 	id := fmt.Sprintf("%s-%d-%d", tool.Key, m.generation, time.Now().UnixNano())
-	j, cmd, err := startTool(m.ctx, m.generation, id, tool.Bin, args, env)
+	// Toolbox mode: a tool can launch before the first 'r' creates the
+	// generation context — initialize it lazily, exactly as scheduleMsg does.
+	if m.ctx == nil {
+		m.ctx, m.cancel = context.WithCancel(context.Background())
+	}
+	j, cmd, err := startTool(m.ctx, m.generation, id, tool.Bin, args, env, tool.Timeout)
 	if err != nil {
 		m.jobName, m.jobToolKey, m.jobStatus = tool.Name, tool.Key, JobFailed
 		m.jobOut, m.jobErr, m.jobDisplay = nil, []string{sanitize(err.Error())}, display

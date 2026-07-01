@@ -1,160 +1,92 @@
-# Plan: KISS simplification pass on network-doctor
-_Locked via grill — by Claude + mplaczek. Hardened against Codex review rounds 1–2._
-
-> **Scope change from the user's sign-off:** the grill locked two candidates.
-> Codex review round 2 showed Candidate 2 (`jobState` struct) no longer clears the
-> net-complexity bar once it must preserve all partial-update semantics — it would
-> add a type + nesting + churn while removing no real complexity. Per the user's own
-> governing rule (KISS over DRY; no abstraction that doesn't remove more than it adds),
-> Candidate 2 is **dropped**. This pass is now **Candidate 1 only**. The user is the
-> final gate and can reinstate Candidate 2 if they disagree.
+# Plan: Cross-platform support (Linux + macOS + Windows)
+_Locked via grill — by Claude + mplaczek. Revised after Codex review rounds 1–3._
 
 ## Goal
-Reduce complexity in the existing codebase without changing any user-observable
-behavior. The native DAG probes, diagnosis engine, two-pane TUI, streaming tool
-jobs, and markdown export must all work exactly as they do today. This is a
-simplification pass, not a rewrite and not a feature sprint: the deliverable is a
-short, honest list of changes that each remove more complexity (concepts, state,
-branches, indirection) than they add. The codebase is already largely well-KISS'd
-(recent commits consolidated glyph rendering, inlined ExitCode, pruned aliases),
-so the qualifying list is deliberately short — padding it would itself violate KISS.
+network-doctor currently builds and fully works only on Linux. Make it build and
+run correctly on Linux, macOS, and Windows. The native probe engine (checks.go,
+diagnosis, TUI) is already pure Go and portable; the work is confined to the
+platform-specific surfaces: the job runner's process-group handling,
+default-gateway lookup, Wi-Fi SSID lookup, the drill-down tool table, and
+fix-hint strings. On macOS and Windows the new implementations prefer OS
+built-in commands (user's explicit preference) over native APIs, because both
+values they feed (gateway, SSID) are display-only and already degrade
+gracefully to empty. Existing native Linux implementations stay untouched.
 
-## Frozen behavior contract (must stay byte-identical / user-observable)
-- CLI args and parsing; the three target axes (port / protocol / scheme); `--toolbox`
-- Exit codes `0` / `1` / `2` — **as the code emits them today**, including the
-  pre-existing deferred-quit defect (see Risks); this pass must not change them
-- Diagnosis one-line wording (the verdict strings from `diagnosis.go` and probe `Detail`/`Fix`)
-- Probe glyphs `✓ ✗ ⊘ –` and their color/status meaning, even if internal names change
-- Row labels and probe ordering as shown to the user
-- Export markdown format (`export.go` output) — frozen *modulo* the two inherently
-  per-run values it embeds: the RFC3339 `time.Now()` generation stamp and the
-  timestamped no-clobber filename from `uniquePath()`. Everything else byte-identical.
-- Tool command argv, env, and display strings (`ping -c 4 -W 2 …`, the `curl …` flag set, etc.)
-- Documented timeout/default behavior and any README-documented examples
+## Approach
+1. **Job runner portability (`internal/ui/jobs.go`) — Windows compile blocker.**
+   `syscall.SysProcAttr{Setpgid: true}` and `killGroup` (`Getpgid`/`Kill`/`SIGKILL`)
+   are Unix-only. Split into `procgroup_unix.go` (`//go:build unix` — current
+   behavior, covers linux+darwin) exposing `setProcGroup(cmd)` and
+   `killGroup(cmd)`, and `procgroup_windows.go` where `setProcGroup` is a no-op
+   and kill is `cmd.Process.Kill()`. Windows built-ins (ping/tracert/pathping/
+   netstat/nslookup/curl) don't spawn descendant trees, so plain Kill suffices;
+   `// ponytail:` comment names Job Objects as the upgrade path if a tree-killing
+   need appears.
+2. **Per-tool timeout.** Global `toolTimeout = 12s` would kill pathping mid-run.
+   Add `Timeout time.Duration` to `Tool` (zero = 12 s default), plumb through
+   `startTool`; pathping gets 90 s, consistent with its bounded flags.
+   While in `launchTool`: fix the pre-existing `--toolbox` panic — `m.ctx` is only
+   initialized on `scheduleMsg`, so launching a tool before the first `r` passes a
+   nil parent to `context.WithTimeout` (model.go:292). Initialize `m.ctx` lazily in
+   `launchTool` exactly as `scheduleMsg` does, plus a regression test.
+3. **Gateway (display-only detail in `internetProbe`).**
+   - Shared signature becomes `defaultRoute(ctx context.Context) (ip string, found bool, err error)`. Linux impl (`/proc/net/route`) ignores ctx; only the checks.go call site changes.
+   - `route_darwin.go`: exec `route -n get -inet default` via `exec.CommandContext` capped at min(ctx, 2 s); parse the `gateway:` line; accept the value only if `net.ParseIP(v).To4() != nil` (rejects `link#N` and names).
+   - `route_windows.go`: exec `route print -4` the same way; accept only rows with the five-column Active Routes shape — destination `0.0.0.0`, netmask `0.0.0.0`, gateway parses as IPv4, *interface column parses as IPv4*, metric numeric — which structurally excludes the four-column Persistent Routes section (locale-independent, no header matching); pick lowest metric. Fixture includes a competing persistent default route.
+   - Parsers are pure `func(io.Reader) (string, bool, error)` in **untagged** `internal/diagnostic/gateway_parse.go`, fixture-tested on any OS.
+4. **SSID (display-only, already "" when wired/unknown).**
+   - Shared signature becomes `ssid(ctx context.Context, iface string) string`; `ifaceProbe` passes its ctx; Linux ioctl impl ignores it.
+   - `ssid_darwin.go`: exec `networksetup -getairportnetwork <iface>` (iface is already `enX`); parse the `Current Wi-Fi Network: <name>` line; anything else → "".
+   - `ssid_windows.go`: exec `netsh wlan show interfaces`; split output into blank-line-separated blocks; a block matches only if some line's *value* (text after the first `:`, trimmed) equals iface — value comparison, so no reliance on the localized `Name` label. From the matching block take the line whose key (text before `:`, trimmed) is exactly `SSID` (excludes `BSSID`; the `SSID` label itself is not translated). No fallback: no matching block → "" — netsh lists only WLAN interfaces, so an Ethernet/VPN iface correctly never acquires a Wi-Fi SSID.
+   - Parsers pure + untagged in `internal/diagnostic/ssid_parse.go`, fixture-tested (fixtures include a two-adapter netsh capture and a non-English one). All parsed SSIDs pass through `textsafe.Clean`.
+5. **Drill-down tool table (`internal/ui/tools.go`).**
+   - `toolsFor(t *Target)` becomes `toolsFor(t *Target, goos string)`; production passes `runtime.GOOS`; tests exercise all three tables from one OS. Same hotkeys everywhere:
 
-**Free to change:** internal names, function boundaries, struct layout, file moves
-within a package, duplicate render/state cleanup, simpler control flow, and test
-reshaping — as long as the asserted behavior is unchanged.
+     | Key | Linux (unchanged) | macOS | Windows |
+     |-----|-------------------|-------|---------|
+     | i | `ip route` | `netstat -rn` | `route print -4` |
+     | s | `ss -tunp` | `netstat -an -p tcp` | `netstat -ano` |
+     | p | `ping -c 4 -W 2 <h>` | `ping -c 4 <h>` (BSD `-W` is ms; omit) | `ping -n 4 -w 2000 <h>` |
+     | d | `dig +time=2 +tries=1 <h>` | same as Linux (dig ships) | `nslookup <h>` |
+     | c | `curl … -o /dev/null` | same | `curl.exe` explicitly — `Bin` and display both, so the pasted command bypasses PowerShell 5.1's `curl`→`Invoke-WebRequest` alias (ships since Win10 1803) |
+     | t | `traceroute -w 2 -q 1 -m 20 <h>` | same as Linux | `tracert -w 2000 -h 20 <h>` |
+     | m | `mtr --report --report-cycles 5 <h>` | same (brew-only; `Available()` hides it) | `pathping -h 20 -q 5 -p 100 -w 500 <h>`, Timeout 90 s |
 
-## Proof gate (run between every commit; stop only with a clean tree)
-Required, in order, all green:
-1. `gofmt -l .` prints nothing (formatting clean)
-2. `go vet ./...`
-3. `go build ./...`
-4. `go test ./...`
-5. `go test -race ./...`
-6. `graphify update .` (AST-only, mandated by CLAUDE.md/AGENTS.md after code changes)
-
-Manual (once, before final sign-off): launch the TUI against a normal target,
-confirm it opens, streams a tool job, renders the two-pane layout, and exits
-cleanly. No deeper click matrix.
-
-**"Clean tree" defined:** commit `PLAN.md` and `PLAN-REVIEW-LOG.md` first, so they
-are tracked. Thereafter "clean" means `git status --porcelain` is empty
-(`graphify-out/` is gitignored and never appears; the local binary is gitignored).
-Each candidate is its own commit; the tree is clean between candidates.
-
-## Approach (one candidate; its own commit, fully gated)
-
-### Candidate 1 — `staticTool` helper in `internal/ui/tools.go`
-Six of the seven `Tool` literals (`ip`, `ss`, `ping`, `dig`, `traceroute`, `mtr`)
-share an identical `Build` closure shape:
-```go
-Build: func(*Target) ([]string, []string, string) {
-    args := []string{ ... }
-    return args, nil, "<bin> " + shellArgs(args)
-}
-```
-Only `curl` differs (it builds a URL and sets `LC_ALL=C` in env). Introduce:
-```go
-func staticTool(key, name, bin string, args ...string) Tool {
-    return Tool{Key: key, Name: name, Bin: bin, Build: func(*Target) ([]string, []string, string) {
-        a := slices.Clone(args) // fresh slice per call — matches current per-call allocation
-        return a, nil, bin + " " + shellArgs(a)
-    }}
-}
-```
-and collapse the six literals to one line each; leave `curl` as its own literal.
-- **Clears the bar:** used 6×, removes the repeated boilerplate-closure concept, turns boilerplate into data.
-- **Frozen-surface safe:** argv unchanged; display string unchanged (for the static
-  tools the display prefix already equals `Bin`); `curl` untouched.
-- **Slice aliasing (Codex r1 #3):** the variadic `args` is captured once; returning it
-  directly would share one backing array across every `Build` call, unlike today's
-  fresh-per-call allocation. `slices.Clone(args)` restores per-call independence.
-  (`slices` is in the stdlib; module is Go 1.26.)
-- **Coverage is currently absent (Codex r1 #4, r3):** `tools_test.go` only tests
-  `extractFacts` and `shellArgs` — **no** test asserts any tool's definition.
-  This commit MUST add a table-driven test that pins the **complete ordered list** of
-  tools returned by `toolsFor` (both the no-target set and the with-host set), asserting
-  for each, in order: `Key`, `Name`, `Bin`, the `Build` argv, env, and display string —
-  plus that two successive `Build` calls return slices that are not the same backing
-  array (slice independence). `Key`/`Name`/order are user-visible (hotkeys, labels,
-  toolbox display order) and `staticTool` now sets them, so a swap or typo must fail the
-  test. This test is the safety net for the refactor and must be written/passing in the
-  same commit. Derive the expected values from the current literals *before* refactoring.
-- **Commit alone, run the full gate.** This is the entire pass.
+   - curl's `-o /dev/null` becomes `-o` + `os.DevNull` (`NUL` on Windows). `LC_ALL=C` env still set everywhere (harmless on Windows).
+   - **Display strings GOOS-aware, Windows targets PowerShell (documented):** omit the `LC_ALL=C ` display prefix and quote PowerShell-literal style — single quotes, embedded `'` doubled — which also keeps curl's `%{…}` format string inert (cmd.exe `%` expansion is explicitly not supported; one shell, exact rules). Unix keeps current POSIX single-quote style. Display-only; argv execution is unchanged and never shell-interpreted.
+   - `Available()`/`exec.LookPath` already handles PATHEXT on Windows; no change.
+6. **Fact extraction (`extractFacts`).** Gains a `goos` param; stays best-effort (no facts ≠ failure; raw sanitized output authoritative).
+   - Existing ping parser already matches macOS output (`round-trip min/avg/max`, `packet loss`).
+   - Windows ping: parse `(X% loss)` and `Average = Xms` (English-locale only, documented).
+   - nslookup: locale-independent strategy — skip the resolver's own stanza by splitting on the first blank line, then collect every whitespace-separated token in the remainder for which `net.ParseIP(tok).To4() != nil`. Handles `Address:`, `Addresses:`, and indented continuation lines without label matching.
+7. **Fix hints.** Replace the two Linux-isms in checks.go (`ip link set <iface> up`, `/etc/resolv.conf`) with a small per-GOOS lookup: Linux keeps current text; macOS suggests Wi-Fi/cable + `networksetup`; Windows suggests Settings → Network or `ipconfig /all`.
+8. **Unsupported GOOS stubs — complete set.** `//go:build !linux && !darwin && !windows` file providing `defaultRoute`/`ssid` zero-value stubs, **and** `//go:build !unix && !windows` file providing no-op `setProcGroup` + plain-`Kill` `killGroup`, so the compile-everywhere claim holds for the whole program, not just the diagnostic package.
+9. **CI.** `.github/workflows/ci.yml`: matrix `[ubuntu-latest, macos-latest, windows-latest]`, stable Go, `go vet ./...`, `go build ./...`, `go test ./...`, plus `go test -race ./...` on the Linux leg (the plan touches concurrent subprocess cancellation; race gate also run locally before handoff). Two test layers, no mocking abstraction:
+   - **Cancellation/kill correctness**: the existing re-exec test helper in `jobs_test.go` (`startHelper`) already tests `startTool` deterministically — ensure those tests are untagged so the CI matrix runs them on all three OSes; they exercise the per-OS `killGroup` path deterministically (a live `ping` may finish before any deadline, so live commands prove nothing about cancellation).
+   - **Availability smoke**: per-OS tests that really exec the built-ins on the runner (no WLAN/default-route assumptions — assert only: returns without panic within deadline, output string sane). Covers command lookup and wrapper plumbing.
+10. **Manual smoke test** on the user's real macOS and Windows machines: generic mode, one target-mode run, each drill-down hotkey — validates live flag behavior and TUI rendering CI can't.
+11. Run `graphify update .` after code lands (project rule); README gains a platform-support note including the localization caveat below.
 
 ## Key decisions & tradeoffs
-- **Net-complexity bar:** a candidate qualifies only if it removes more complexity than
-  it adds. Deleting clears it by default; a new helper clears it only if used 3+ times
-  and it reduces concepts, not just lines. Measured in concepts/state/branches/indirection, not LOC.
-- **KISS over DRY when they disagree:** fewer hops over fewer repeated characters;
-  clear `Update` message flow over clever reuse; obvious local code over abstract helpers.
-- **`checks.go` is frozen-adjacent:** its `Detail`/`Fix` strings are the product wording.
-  Touch only for changes provably wording-neutral (none planned here).
-- **Each candidate is independently shippable and revertable** — no big-bang refactor,
-  because one atomic diff hides risk and obscures which simplification actually helped.
-
-## Rejected (evaluated, deliberately not done — reasons kept so they stay rejected)
-- **Merge `statusGlyph()` + `glyph()`** — not true duplicates: `statusGlyph` returns a
-  bare rune for the markdown export; `glyph` returns a styled string with a spinner
-  fallback for the TUI. They share only one map lookup; the `statusGlyphs` map already
-  consolidates the data. Merging would couple export formatting to TUI spinner logic.
-- **Extract the 3× "cancel job → set pending → return" block** — 3 lines each; a helper
-  adds an indirection hop at the call site for near-zero gain. Revisit only if it
-  becomes obviously clearer.
-- **Centralize the `wasTicking` spinner-tick dance** — only 2 uses (< 3); fails the bar.
-- **Flatten probe-result boilerplate in `checks.go` / `diagnosis.go`** — frozen-adjacent
-  product wording; idiomatic Go; near-zero readability gain for real frozen-string risk.
-- **Fix the value/pointer exit-code defect (Codex r1 #1) in this pass** — it is a real
-  bug (see Risks) but resolving it changes an exit code, which violates the no-behavior
-  -change contract. Out of scope here; raised to the user for a separate decision.
-- **Candidate 2 — `jobState` struct in `model.go` (Codex r2 #1)** — originally accepted,
-  dropped after review. Once the rename must preserve every partial-update path exactly
-  (r1 #2), grouping the nine flat `job*` fields into a struct adds a new type, a layer of
-  nesting (`m.job.x`), and broad churn across `model.go`/`export.go`/tests while removing
-  no real complexity — the nine fields and their partial-update logic all survive. That
-  fails the net-complexity bar. The job-view/export characterization tests proposed as its
-  precondition (r1 #5) are dropped with it; both return only if Candidate 2 is revived.
+- **Exec OS built-ins over native APIs on macOS/Windows** (grill Q2): gateway and SSID are cosmetic and degrade to empty; native alternatives cost `x/net/route`, iphlpapi plumbing, or cgo+CoreWLAN for zero user-visible gain. Linux stays native.
+- **Hybrid layout** (grill Q4): build tags only on thin exec/syscall wrappers; parsers and the tool table are portable `goos`-parameterized pure functions, fixture-tested from one OS.
+- **Windows kill = `Process.Kill()`, not Job Objects** (Codex R1): the Windows tool set spawns no descendant trees; Job Objects are the documented upgrade path.
+- **English-locale parsing for Windows ping facts; locale-independent strategies (numeric cells, blank-line split + ParseIP, untranslated `SSID` label, block value-match) everywhere else** (Codex R1+R2): full OEM-code-page transcoding (x/text + GetOEMCP) rejected and held on re-review — it cannot recover non-OEM-representable SSIDs (netsh already emits `?` for those), only softens localized-letter mangling in a display pane on non-English Windows; a codepage→decoder dependency is disproportionate to that. Compromise adopted: invalid-byte replacement (`strings.ToValidUTF8(s, "?")`) applied **only at the Windows subprocess boundary** (streamed tool lines + SSID/gateway wrapper output on `runtime.GOOS == "windows"`), so Linux/macOS banner and error sanitization semantics are untouched; README documents the limitation.
+- **Windows `m` → pathping** (grill Q3) with 90 s per-tool timeout (Codex R1). **Windows `d` → nslookup** over Resolve-DnsName.
+- **Per-OS fix hints over generic text** (grill Q5).
+- **ctx plumbed into gateway/SSID wrappers** with `exec.CommandContext` + ~2 s cap.
+- **No injectable command-runner abstraction** (Codex R1 partial reject): wrappers are ~10 lines each; real-exec smoke tests in the CI matrix cover lookup/deadline/kill without adding an interface with one implementation.
+- **Gateway/SSID failures stay silently empty** (Codex R1 reject): both are cosmetic garnish whose absence is self-evident and identical to the legitimate "no route/no Wi-Fi" state; plumbing failure reasons into details/export adds noise to every probe for debug info nobody asked for.
+- **CI matrix + one-time manual smoke** (grill Q6).
 
 ## Risks / open questions
-- **Pre-existing exit-code defect (Codex r1 #1, verified):** the deferred-action path
-  (`runPending`, pointer receiver) returns `*model`, but `ExitCode` only type-asserts
-  `final.(model)` (value). So quitting *while a tool job is running* yields a `*model`
-  to `ExitCode`, which falls through to `return 1` — even on paths the README says are
-  `0` (e.g. toolbox mode where the chain never ran, or a completed no-failure chain).
-  `TestDeferredQuit` confirms the `*model` return but never calls `ExitCode` on it, so
-  the defect is untested. **This pass freezes and preserves this behavior** — and since
-  Candidate 1 touches only `tools.go`, no code in this pass goes near the
-  `runPending`/`Update` region, so the behavior is preserved by inaction. Whether to fix
-  it is a separate question for the user (a one-line `ExitCode` change to also accept
-  `*model`, plus a regression test — but that is a behavior change).
-- With Candidate 2 dropped, this pass carries little risk: Candidate 1 is a mechanical
-  change to two files (`tools.go` and `tools_test.go`). The main residual risk is the new all-tools test
-  encoding a wrong expectation — mitigated by deriving expected argv/display from the
-  current literals before refactoring.
-- Any new duplication/simplification spotted mid-pass goes to Deferred, not acted on.
+- **Windows localization/encoding**: console tools emit OEM code page; non-ASCII localized text renders as visible replacement characters in the raw output pane and Windows ping facts may extract nothing on non-English systems. Accepted + documented; all *load-bearing* parsing (route cells, SSID label + block value-match, nslookup ParseIP) is locale-independent.
+- **macOS SSID tooling churn**: Apple removed `airport`; `networksetup -getairportnetwork` works today; future failure degrades to empty Network field (accepted in grill).
+- **pathping runtime** (~30–60 s) is slow for a TUI pane even with the 90 s cap; output streams live via the existing job runner.
+- `netstat -an -p tcp` on macOS lacks the process info `ss -tunp` shows; accepted asymmetry.
 
-## Out of scope / deferred
-- All roadmap items — `nmap`, multiple concurrent jobs, a `Warn` state, the mtr-parsed
-  route-quality row. No new features during this pass.
-- Any aggressive refactor of `checks.go`, `diagnosis.go`, or `target.go` (frozen-adjacent).
-- The exit-code value/pointer fix (see Risks) — separate decision.
-- Mid-pass discoveries: record here, defer; do not expand scope.
-
-## Done
-Two commits: (commit 0) commit the plan artifacts; (commit 1) Candidate 1 — the
-`staticTool` helper (with `slices.Clone`) plus the new all-seven-tools table test —
-with the full gate green. **Done** = Candidate 1 lands cleanly with a clean tree.
-That is the whole pass. (If the user reinstates Candidate 2, it returns with its
-characterization-test precondition as described in Rejected.)
+## Out of scope
+- Release/distribution automation (goreleaser, prebuilt binaries) — grill Q7.
+- Native API implementations (x/net/route, iphlpapi, CoreWLAN) and OEM code-page transcoding.
+- IPv6, happy-eyeballs, any probe-engine behavior change.
+- First-class support for other GOOSes (they compile via the stub with empty cosmetic fields; untested).
