@@ -1,6 +1,10 @@
 package ui
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/mplaczek99/network-doctor/internal/diagnostic"
+)
 
 func TestToolsFor(t *testing.T) {
 	for _, goos := range []string{"linux", "darwin", "windows"} {
@@ -39,11 +43,11 @@ func TestToolboxExitZero(t *testing.T) {
 		t.Error("toolbox mode, no chain run, must exit 0")
 	}
 	// Once the chain runs and a probe fails, normal rules apply.
-	m.started[pIface] = true
-	for _, id := range m.order {
-		m.results[id] = ProbeResult{Status: StatusPass}
+	m.started[diagnostic.ProbeIface] = true
+	for _, probe := range m.probes {
+		m.results[probe.ID] = diagnostic.ProbeResult{Status: diagnostic.StatusPass}
 	}
-	m.results[pDNS] = ProbeResult{Status: StatusFail}
+	m.results[diagnostic.ProbeDNS] = diagnostic.ProbeResult{Status: diagnostic.StatusFail}
 	if ExitCode(m) != 1 {
 		t.Error("toolbox mode after a failed chain must exit 1")
 	}

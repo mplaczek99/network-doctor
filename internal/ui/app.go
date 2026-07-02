@@ -27,8 +27,8 @@ func ExitCode(final tea.Model) int {
 	if len(m.results) < len(m.probes) {
 		return 1
 	}
-	for _, id := range m.order {
-		if m.results[id].Status == StatusFail {
+	for _, probe := range m.probes {
+		if m.results[probe.ID].Status == diagnostic.StatusFail {
 			return 1
 		}
 	}

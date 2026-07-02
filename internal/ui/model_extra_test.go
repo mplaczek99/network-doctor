@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mplaczek99/network-doctor/internal/diagnostic"
 )
 
 // asModelP tolerates either a value model or a *model — the deferred-action path
@@ -24,21 +25,6 @@ func asModelP(t *testing.T, m tea.Model) model {
 	default:
 		t.Fatalf("expected model/*model, got %T", m)
 		return model{}
-	}
-}
-
-// ---- pure helpers ----
-
-func TestTail(t *testing.T) {
-	lines := []string{"a", "b", "c", "d"}
-	if got := tail(lines, 2); len(got) != 2 || got[0] != "c" || got[1] != "d" {
-		t.Errorf("tail(_,2) = %v, want [c d]", got)
-	}
-	if got := tail(lines, 10); len(got) != 4 {
-		t.Errorf("tail bigger than slice = %v, want all 4", got)
-	}
-	if got := tail[string](nil, 3); got != nil {
-		t.Errorf("tail(nil) = %v, want nil", got)
 	}
 }
 
@@ -96,15 +82,15 @@ func TestNetworkLine(t *testing.T) {
 	if got := m.networkLine(); got != "" {
 		t.Errorf("no iface result → %q, want empty", got)
 	}
-	m.results[pIface] = ProbeResult{Status: StatusPass, Network: "HomeWiFi"}
+	m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{Status: diagnostic.StatusPass, Network: "HomeWiFi"}
 	if got := m.networkLine(); got != "Wi-Fi: HomeWiFi" {
 		t.Errorf("wifi line = %q", got)
 	}
-	m.results[pIface] = ProbeResult{Status: StatusPass, Iface: "eth0"}
+	m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{Status: diagnostic.StatusPass, Iface: "eth0"}
 	if got := m.networkLine(); got != "Wired: eth0" {
 		t.Errorf("wired line = %q", got)
 	}
-	m.results[pIface] = ProbeResult{Status: StatusFail, Iface: "eth0"}
+	m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{Status: diagnostic.StatusFail, Iface: "eth0"}
 	if got := m.networkLine(); got != "" {
 		t.Errorf("failed iface → %q, want empty", got)
 	}
@@ -113,19 +99,20 @@ func TestNetworkLine(t *testing.T) {
 func TestGlyph(t *testing.T) {
 	m := newModel(nil)
 	// No result yet → spinner view, must not panic and must be non-empty handling.
-	_ = m.glyph(pIface)
+	_ = m.glyph(diagnostic.ProbeIface)
 	cases := []struct {
-		status Status
+		status diagnostic.Status
 		want   rune
 	}{
-		{StatusPass, '✓'},
-		{StatusFail, '✗'},
-		{StatusSkip, '⊘'},
-		{StatusNA, '–'},
+		{diagnostic.StatusPass, '✓'},
+		{diagnostic.StatusFail, '✗'},
+		{diagnostic.StatusSkip, '⊘'},
+		{diagnostic.StatusNA, '–'},
+		{diagnostic.Status(255), '?'},
 	}
 	for _, c := range cases {
-		m.results[pIface] = ProbeResult{Status: c.status}
-		if got := m.glyph(pIface); !strings.ContainsRune(got, c.want) {
+		m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{Status: c.status}
+		if got := m.glyph(diagnostic.ProbeIface); !strings.ContainsRune(got, c.want) {
 			t.Errorf("glyph(%d) = %q, want to contain %q", c.status, got, c.want)
 		}
 	}
@@ -377,7 +364,7 @@ func TestToolboxLaunchBeforeRun(t *testing.T) {
 		t.Fatal("precondition: toolbox model must start with a nil ctx")
 	}
 	tool := Tool{Key: "z", Name: "helper", Bin: os.Args[0],
-		Build: func(*Target) ([]string, []string, string) {
+		Build: func(*diagnostic.Target) ([]string, []string, string) {
 			return []string{"-test.run=TestHelperProcess"},
 				append(os.Environ(), "GO_HELPER=1", "GO_HELPER_MODE=lines", "GO_HELPER_N=1"),
 				"helper"
@@ -401,7 +388,7 @@ func TestLaunchToolUnavailable(t *testing.T) {
 	m := newModel(nil)
 	tool := Tool{
 		Key: "z", Name: "nope", Bin: "network-doctor-no-such-binary-xyz",
-		Build: func(*Target) ([]string, []string, string) { return nil, nil, "nope" },
+		Build: func(*diagnostic.Target) ([]string, []string, string) { return nil, nil, "nope" },
 	}
 	cmd := (&m).launchTool(tool)
 	if cmd != nil {
@@ -440,7 +427,7 @@ func TestViewRenders(t *testing.T) {
 	}
 
 	net := newModel(nil)
-	net.results[pIface] = ProbeResult{Status: StatusPass, Network: "HomeWiFi"}
+	net.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{Status: diagnostic.StatusPass, Network: "HomeWiFi"}
 	if !strings.Contains(net.View(), "Wi-Fi: HomeWiFi") {
 		t.Error("view must show the connected network")
 	}

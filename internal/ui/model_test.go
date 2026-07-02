@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mplaczek99/network-doctor/internal/diagnostic"
 )
 
 func asModel(t *testing.T, m tea.Model) model {
@@ -17,32 +18,13 @@ func asModel(t *testing.T, m tea.Model) model {
 
 func keyMsg(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
 
-func TestStatusGlyph(t *testing.T) {
-	tests := []struct {
-		status Status
-		want   rune
-	}{
-		{StatusPass, '✓'},
-		{StatusFail, '✗'},
-		{StatusSkip, '⊘'},
-		{StatusNA, '–'},
-		{Status(255), '?'},
-	}
-
-	for _, tt := range tests {
-		if got := statusGlyph(tt.status); got != tt.want {
-			t.Errorf("statusGlyph(%d) = %q, want %q", tt.status, got, tt.want)
-		}
-	}
-}
-
 // A probeDoneMsg from a stale generation is dropped (mirrors the gen guard).
 func TestStaleProbeDropped(t *testing.T) {
 	m := newModel(nil)
 	m.generation = 5
-	u, cmd := m.Update(probeDoneMsg{id: pIface, gen: 0, res: ProbeResult{Status: StatusPass}})
+	u, cmd := m.Update(probeDoneMsg{id: diagnostic.ProbeIface, gen: 0, res: diagnostic.ProbeResult{Status: diagnostic.StatusPass}})
 	nm := asModel(t, u)
-	if _, ok := nm.results[pIface]; ok {
+	if _, ok := nm.results[diagnostic.ProbeIface]; ok {
 		t.Error("stale probe must not store a result")
 	}
 	if cmd != nil {
@@ -53,8 +35,8 @@ func TestStaleProbeDropped(t *testing.T) {
 // 'r' bumps the generation, clears run state, and resets the context.
 func TestRerunResets(t *testing.T) {
 	m := newModel(nil)
-	m.results[pIface] = ProbeResult{Status: StatusPass}
-	m.started[pIface] = true
+	m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{Status: diagnostic.StatusPass}
+	m.started[diagnostic.ProbeIface] = true
 	gen0 := m.generation
 	u, cmd := m.Update(keyMsg("r"))
 	nm := asModel(t, u)
@@ -92,10 +74,10 @@ func TestScheduleStartsRoot(t *testing.T) {
 	if nm.ctx == nil {
 		t.Error("scheduleMsg must create the generation context")
 	}
-	if !nm.started[pIface] {
+	if !nm.started[diagnostic.ProbeIface] {
 		t.Error("iface (root) should be dispatched")
 	}
-	if nm.started[pInternet] || nm.started[pDNS] {
+	if nm.started[diagnostic.ProbeInternet] || nm.started[diagnostic.ProbeDNS] {
 		t.Error("dependants of iface must wait")
 	}
 	if cmd == nil {
@@ -123,13 +105,13 @@ func TestExitCode(t *testing.T) {
 	if ExitCode(m) != 1 {
 		t.Error("unfinished chain must exit 1")
 	}
-	for _, id := range m.order {
-		m.results[id] = ProbeResult{Status: StatusPass}
+	for _, probe := range m.probes {
+		m.results[probe.ID] = diagnostic.ProbeResult{Status: diagnostic.StatusPass}
 	}
 	if ExitCode(m) != 0 {
 		t.Error("all-pass must exit 0")
 	}
-	m.results[pDNS] = ProbeResult{Status: StatusFail}
+	m.results[diagnostic.ProbeDNS] = diagnostic.ProbeResult{Status: diagnostic.StatusFail}
 	if ExitCode(m) != 1 {
 		t.Error("a fail must exit 1")
 	}

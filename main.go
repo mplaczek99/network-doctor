@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 
@@ -10,15 +11,9 @@ import (
 )
 
 func main() {
-	toolbox := false
-	arg := ""
-	for _, a := range os.Args[1:] {
-		if a == "--toolbox" {
-			toolbox = true
-			continue
-		}
-		arg = a // last non-flag wins
-	}
+	toolbox := flag.Bool("toolbox", false, "start in toolbox mode")
+	flag.Parse()
+	arg := flag.Arg(0)
 
 	var t *diagnostic.Target
 	if arg != "" {
@@ -30,7 +25,7 @@ func main() {
 		t = parsed
 	}
 
-	p := tea.NewProgram(ui.New(t, toolbox), tea.WithAltScreen())
+	p := tea.NewProgram(ui.New(t, *toolbox), tea.WithAltScreen())
 	final, err := p.Run()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "network-doctor:", err)

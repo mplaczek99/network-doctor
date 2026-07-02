@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mplaczek99/network-doctor/internal/diagnostic"
 )
 
 // Tool is a drill-down adapter: a bounded external command keyed to a hotkey.
@@ -18,7 +20,7 @@ type Tool struct {
 	Timeout time.Duration // per-tool job timeout; 0 = default toolTimeout
 	// Build returns the argv (never a shell string), the process env (nil =
 	// inherit), and a human-display command string (shell-quoted, display only).
-	Build func(t *Target) (args, env []string, display string)
+	Build func(t *diagnostic.Target) (args, env []string, display string)
 }
 
 // Available reports whether the tool's binary is installed.
@@ -31,7 +33,7 @@ func (t Tool) Available() bool {
 // (production passes runtime.GOOS; tests exercise all tables from one OS).
 // Same hotkeys everywhere. The target-independent tools (routes, sockets) are
 // always offered; the target-dependent set only when a host is given.
-func toolsFor(t *Target, goos string) []Tool {
+func toolsFor(t *diagnostic.Target, goos string) []Tool {
 	quote := shellArgs
 	if goos == "windows" {
 		quote = psArgs
@@ -105,9 +107,9 @@ func curlTool(host, goos string) Tool {
 	}
 	return Tool{
 		Key: "c", Name: "curl", Bin: bin,
-		Build: func(t *Target) ([]string, []string, string) {
+		Build: func(t *diagnostic.Target) ([]string, []string, string) {
 			scheme := "https"
-			if t.Proto == ProtoHTTP {
+			if t.Proto == diagnostic.ProtoHTTP {
 				scheme = "http"
 			}
 			url := scheme + "://" + host
@@ -137,7 +139,7 @@ func curlTool(host, goos string) Tool {
 // (a host, if any, is already baked into args). slices.Clone gives each Build call
 // independent slices, matching the per-call allocation of the literals it replaces.
 func staticTool(quote func([]string) string, key, name, bin string, args ...string) Tool {
-	return Tool{Key: key, Name: name, Bin: bin, Build: func(*Target) ([]string, []string, string) {
+	return Tool{Key: key, Name: name, Bin: bin, Build: func(*diagnostic.Target) ([]string, []string, string) {
 		a := slices.Clone(args)
 		return a, nil, bin + " " + quote(a)
 	}}

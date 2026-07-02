@@ -11,6 +11,8 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mplaczek99/network-doctor/internal/diagnostic"
+	"github.com/mplaczek99/network-doctor/internal/textsafe"
 )
 
 // scheduleMsg asks Update to dispatch any newly-runnable probes for generation
@@ -19,9 +21,9 @@ type scheduleMsg struct{ gen int }
 
 // probeDoneMsg carries a finished probe's result. Accepted only when gen matches.
 type probeDoneMsg struct {
-	id  ProbeID
+	id  diagnostic.ProbeID
 	gen int
-	res ProbeResult
+	res diagnostic.ProbeResult
 }
 
 // pendingAction is a state change deferred until the active job's terminal event
@@ -54,15 +56,13 @@ type outLine struct {
 }
 
 type model struct {
-	target *Target
-	probes []Probe
-	order  []ProbeID
-	byID   map[ProbeID]Probe
+	target *diagnostic.Target
+	probes []diagnostic.Probe
 
 	// results + started are owned exclusively by Update; probe goroutines get an
 	// immutable snapshot, never the live map.
-	results map[ProbeID]ProbeResult
-	started map[ProbeID]bool
+	results map[diagnostic.ProbeID]diagnostic.ProbeResult
+	started map[diagnostic.ProbeID]bool
 
 	selected int
 	spinner  spinner.Model
@@ -107,25 +107,15 @@ var (
 	selStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 )
 
-var statusGlyphs = map[Status]rune{StatusPass: '✓', StatusFail: '✗', StatusSkip: '⊘', StatusNA: '–'}
-
-func newModel(t *Target) model {
-	probes := buildProbes(t)
-	order := make([]ProbeID, len(probes))
-	byID := make(map[ProbeID]Probe, len(probes))
-	for i, p := range probes {
-		order[i] = p.ID
-		byID[p.ID] = p
-	}
+func newModel(t *diagnostic.Target) model {
+	probes := diagnostic.BuildProbes(t)
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	return model{
 		target:    t,
 		probes:    probes,
-		order:     order,
-		byID:      byID,
-		results:   map[ProbeID]ProbeResult{},
-		started:   map[ProbeID]bool{},
+		results:   map[diagnostic.ProbeID]diagnostic.ProbeResult{},
+		started:   map[diagnostic.ProbeID]bool{},
 		tools:     toolsFor(t, runtime.GOOS),
 		jobStatus: JobQueued,
 		spinner:   sp,
@@ -241,7 +231,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "down", "j":
-		if m.selected < len(m.order)-1 {
+		if m.selected < len(m.probes)-1 {
 			m.selected++
 		}
 		return m, nil
@@ -304,8 +294,8 @@ func (m *model) doRerun() tea.Cmd {
 	m.clearCancel()
 	m.ctx = nil
 	m.generation++
-	m.results = map[ProbeID]ProbeResult{}
-	m.started = map[ProbeID]bool{}
+	m.results = map[diagnostic.ProbeID]diagnostic.ProbeResult{}
+	m.started = map[diagnostic.ProbeID]bool{}
 	m.activeJob, m.pending = nil, nil
 	m.jobStatus, m.jobLines, m.facts, m.jobDropped, m.jobEvicted = JobQueued, nil, nil, 0, 0
 	if m.viewing {
@@ -337,7 +327,7 @@ func (m *model) launchTool(tool Tool) tea.Cmd {
 	j, cmd, err := startTool(m.ctx, m.generation, id, tool.Bin, args, env, tool.Timeout)
 	if err != nil {
 		m.jobName, m.jobToolKey, m.jobStatus = tool.Name, tool.Key, JobFailed
-		m.jobLines, m.jobDisplay = []outLine{{StreamStderr, sanitize(err.Error())}}, display
+		m.jobLines, m.jobDisplay = []outLine{{StreamStderr, textsafe.Clean(err.Error())}}, display
 		return nil
 	}
 	m.activeJob, m.jobStatus = j, JobRunning
@@ -382,30 +372,30 @@ func (m *model) scheduleStep() []tea.Cmd {
 // depsState reports whether all deps completed (ready) and whether any completed
 // dep blocks this probe. A dep blocks on Fail or Skip (no output); a Pass or an
 // applicable NotApplicable (which still produced output) satisfies.
-func depsState(deps []ProbeID, res map[ProbeID]ProbeResult) (ready, blocked bool) {
+func depsState(deps []diagnostic.ProbeID, res map[diagnostic.ProbeID]diagnostic.ProbeResult) (ready, blocked bool) {
 	for _, d := range deps {
 		r, ok := res[d]
 		if !ok {
 			return false, false
 		}
-		if r.Status == StatusFail || r.Status == StatusSkip {
+		if r.Status == diagnostic.StatusFail || r.Status == diagnostic.StatusSkip {
 			blocked = true
 		}
 	}
 	return true, blocked
 }
 
-func skipResult(p Probe) ProbeResult {
-	return ProbeResult{ID: p.ID, Status: StatusSkip, Detail: "skipped — a prerequisite failed"}
+func skipResult(p diagnostic.Probe) diagnostic.ProbeResult {
+	return diagnostic.ProbeResult{ID: p.ID, Status: diagnostic.StatusSkip, Detail: "skipped — a prerequisite failed"}
 }
 
 // runProbe builds the tea.Cmd for a probe, capturing the generation, the parent
 // context, and an immutable snapshot of just its dependency outputs.
-func (m *model) runProbe(p Probe) tea.Cmd {
+func (m *model) runProbe(p diagnostic.Probe) tea.Cmd {
 	gen, parent, run, id := m.generation, m.ctx, p.Run, p.ID
 	snap := snapshot(m.results, p.Deps)
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(parent, probeTimeout)
+		ctx, cancel := context.WithTimeout(parent, diagnostic.ProbeTimeout)
 		defer cancel()
 		return probeDoneMsg{id: id, gen: gen, res: run(ctx, snap)}
 	}
@@ -413,8 +403,8 @@ func (m *model) runProbe(p Probe) tea.Cmd {
 
 // snapshot copies just the requested dependency results into a fresh map so the
 // probe goroutine never touches the live, Update-owned map.
-func snapshot(res map[ProbeID]ProbeResult, deps []ProbeID) map[ProbeID]ProbeResult {
-	out := make(map[ProbeID]ProbeResult, len(deps))
+func snapshot(res map[diagnostic.ProbeID]diagnostic.ProbeResult, deps []diagnostic.ProbeID) map[diagnostic.ProbeID]diagnostic.ProbeResult {
+	out := make(map[diagnostic.ProbeID]diagnostic.ProbeResult, len(deps))
 	for _, d := range deps {
 		if r, ok := res[d]; ok {
 			out[d] = r
@@ -503,28 +493,20 @@ func (m *model) clearCancel() {
 	}
 }
 
-func statusGlyph(status Status) rune {
-	if glyph, ok := statusGlyphs[status]; ok {
-		return glyph
-	}
-	return '?'
-}
-
-func (m model) glyph(id ProbeID) string {
+func (m model) glyph(id diagnostic.ProbeID) string {
 	r, ok := m.results[id]
 	if !ok {
 		return m.spinner.View()
 	}
-	glyph := string(statusGlyph(r.Status))
 	switch r.Status {
-	case StatusPass:
-		return passStyle.Render(glyph)
-	case StatusFail:
-		return failStyle.Render(glyph)
-	case StatusSkip:
-		return skipStyle.Render(glyph)
-	case StatusNA:
-		return faintStyle.Render(glyph)
+	case diagnostic.StatusPass:
+		return passStyle.Render("✓")
+	case diagnostic.StatusFail:
+		return failStyle.Render("✗")
+	case diagnostic.StatusSkip:
+		return skipStyle.Render("⊘")
+	case diagnostic.StatusNA:
+		return faintStyle.Render("–")
 	}
 	return "?"
 }
@@ -533,8 +515,8 @@ func (m model) glyph(id ProbeID) string {
 // SSID when wireless, else the wired interface name. Empty until the interface
 // probe has passed.
 func (m model) networkLine() string {
-	r, ok := m.results[pIface]
-	if !ok || r.Status != StatusPass {
+	r, ok := m.results[diagnostic.ProbeIface]
+	if !ok || r.Status != diagnostic.StatusPass {
 		return ""
 	}
 	if r.Network != "" {
@@ -567,14 +549,14 @@ func (m model) View() string {
 	if deferred {
 		left.WriteString(faintStyle.Render("Toolbox mode.\nChain not run.\nPress r to run checks.") + "\n")
 	} else {
-		for i, id := range m.order {
-			name := m.byID[id].Name
+		for i, probe := range m.probes {
+			name := probe.Name
 			if i == m.selected {
 				name = selStyle.Render("› " + name)
 			} else {
 				name = "  " + name
 			}
-			left.WriteString(m.glyph(id) + " " + name + "\n")
+			left.WriteString(m.glyph(probe.ID) + " " + name + "\n")
 		}
 	}
 
@@ -583,14 +565,19 @@ func (m model) View() string {
 	if deferred {
 		right.WriteString("Toolbox mode — press r to run the diagnostic chain, or pick a tool below.\n")
 	} else {
-		if summary := diagnose(m.target, m.order, m.results); summary != "" {
+		order := make([]diagnostic.ProbeID, len(m.probes))
+		for i, probe := range m.probes {
+			order[i] = probe.ID
+		}
+		if summary := diagnostic.Diagnose(m.target, order, m.results); summary != "" {
 			right.WriteString(summary + "\n\n")
 		}
-		id := m.order[m.selected]
-		right.WriteString(titleStyle.Render(m.byID[id].Name) + "\n")
+		probe := m.probes[m.selected]
+		right.WriteString(titleStyle.Render(probe.Name) + "\n")
+		id := probe.ID
 		if r, ok := m.results[id]; ok {
 			right.WriteString(r.Status.String() + " — " + r.Detail + "\n")
-			if r.Status == StatusFail && r.Fix != "" {
+			if r.Status == diagnostic.StatusFail && r.Fix != "" {
 				right.WriteString(faintStyle.Render("Fix: "+r.Fix) + "\n")
 			}
 			if r.Source != nil {
@@ -599,7 +586,7 @@ func (m model) View() string {
 			for _, a := range r.Attempts {
 				st := "ok"
 				if a.Err != nil {
-					st = sanitize(a.Err.Error())
+					st = textsafe.Clean(a.Err.Error())
 				}
 				right.WriteString(faintStyle.Render(fmt.Sprintf("  %s %dms %s", a.IP, a.Dur.Milliseconds(), st)) + "\n")
 			}
@@ -702,7 +689,10 @@ func (m model) jobView(avail int) string {
 	}
 	b.WriteString(faintStyle.Render(status) + "\n")
 
-	shown := tail(m.jobLines, tailN)
+	shown := m.jobLines
+	if len(shown) > tailN {
+		shown = shown[len(shown)-tailN:]
+	}
 	for _, ln := range shown {
 		if ln.stream == StreamStderr {
 			b.WriteString(faintStyle.Render("! "+ln.text) + "\n")
@@ -728,11 +718,4 @@ func (m model) jobView(avail int) string {
 		b.WriteString(faintStyle.Render("("+strings.Join(notes, " · ")+")") + "\n")
 	}
 	return b.String() + "\n"
-}
-
-func tail[T any](lines []T, n int) []T {
-	if len(lines) > n {
-		return lines[len(lines)-n:]
-	}
-	return lines
 }

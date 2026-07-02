@@ -12,6 +12,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mplaczek99/network-doctor/internal/textsafe"
 )
 
 // JobStatus is a drill-down job's lifecycle terminal state (plus the two
@@ -159,7 +160,7 @@ func streamReader(r io.Reader, stream Stream, id string, gen int, ch chan<- tea.
 		line, err := readCappedLine(br)
 		if line != "" {
 			select {
-			case ch <- ToolOutputMsg{JobID: id, Generation: gen, Stream: stream, Line: sanitize(winSafe(line))}:
+			case ch <- ToolOutputMsg{JobID: id, Generation: gen, Stream: stream, Line: textsafe.Clean(winSafe(line))}:
 			default:
 				atomic.AddInt64(dropped, 1)
 			}

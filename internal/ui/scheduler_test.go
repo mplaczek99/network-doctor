@@ -3,11 +3,13 @@ package ui
 import (
 	"net"
 	"testing"
+
+	"github.com/mplaczek99/network-doctor/internal/diagnostic"
 )
 
-func mustTarget(t *testing.T, s string) *Target {
+func mustTarget(t *testing.T, s string) *diagnostic.Target {
 	t.Helper()
-	target, err := parseTarget(s)
+	target, err := diagnostic.ParseTarget(s)
 	if err != nil {
 		t.Fatalf("parseTarget(%q): %v", s, err)
 	}
@@ -18,46 +20,46 @@ func mustTarget(t *testing.T, s string) *Target {
 // DNS, so DNS-down-but-internet-up remains diagnosable.
 func TestSiblingIndependence(t *testing.T) {
 	m := newModel(nil)
-	m.results[pIface] = ProbeResult{ID: pIface, Status: StatusPass}
-	m.started[pIface] = true
+	m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{ID: diagnostic.ProbeIface, Status: diagnostic.StatusPass}
+	m.started[diagnostic.ProbeIface] = true
 	cmds := m.scheduleStep()
 	if len(cmds) != 2 {
 		t.Fatalf("want 2 dispatched (internet, dns), got %d", len(cmds))
 	}
-	if !m.started[pInternet] || !m.started[pDNS] {
+	if !m.started[diagnostic.ProbeInternet] || !m.started[diagnostic.ProbeDNS] {
 		t.Fatal("internet+dns should both be dispatched")
 	}
-	if _, ok := m.results[pDNS]; ok {
+	if _, ok := m.results[diagnostic.ProbeDNS]; ok {
 		t.Error("dns must be dispatched, not skipped by an egress failure")
 	}
 }
 
 func TestSkipPropagation(t *testing.T) {
 	m := newModel(mustTarget(t, "github.com"))
-	m.results[pIface] = ProbeResult{Status: StatusPass}
-	m.results[pInternet] = ProbeResult{Status: StatusPass}
-	m.results[pDNS] = ProbeResult{Status: StatusFail}
-	m.started[pIface], m.started[pInternet], m.started[pDNS] = true, true, true
+	m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{Status: diagnostic.StatusPass}
+	m.results[diagnostic.ProbeInternet] = diagnostic.ProbeResult{Status: diagnostic.StatusPass}
+	m.results[diagnostic.ProbeDNS] = diagnostic.ProbeResult{Status: diagnostic.StatusFail}
+	m.started[diagnostic.ProbeIface], m.started[diagnostic.ProbeInternet], m.started[diagnostic.ProbeDNS] = true, true, true
 	m.scheduleStep()
-	if m.results[pTargetTCP].Status != StatusSkip {
-		t.Fatalf("target_tcp = %v, want Skip", m.results[pTargetTCP].Status)
+	if m.results[diagnostic.ProbeTargetTCP].Status != diagnostic.StatusSkip {
+		t.Fatalf("target_tcp = %v, want Skip", m.results[diagnostic.ProbeTargetTCP].Status)
 	}
-	if m.results[pTLS].Status != StatusSkip || m.results[pHTTP].Status != StatusSkip || m.results[pHTTPS].Status != StatusSkip {
+	if m.results[diagnostic.ProbeTLS].Status != diagnostic.StatusSkip || m.results[diagnostic.ProbeHTTP].Status != diagnostic.StatusSkip || m.results[diagnostic.ProbeHTTPS].Status != diagnostic.StatusSkip {
 		t.Error("skip must propagate through TLS, HTTP, and HTTPS")
 	}
 }
 
 func TestNADoesNotBlock(t *testing.T) {
 	m := newModel(mustTarget(t, "1.1.1.1"))
-	m.results[pIface] = ProbeResult{Status: StatusPass}
-	m.results[pInternet] = ProbeResult{Status: StatusPass}
-	m.results[pDNS] = ProbeResult{Status: StatusNA, Addrs: []net.IP{net.ParseIP("1.1.1.1")}}
-	m.started[pIface], m.started[pInternet], m.started[pDNS] = true, true, true
+	m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{Status: diagnostic.StatusPass}
+	m.results[diagnostic.ProbeInternet] = diagnostic.ProbeResult{Status: diagnostic.StatusPass}
+	m.results[diagnostic.ProbeDNS] = diagnostic.ProbeResult{Status: diagnostic.StatusNA, Addrs: []net.IP{net.ParseIP("1.1.1.1")}}
+	m.started[diagnostic.ProbeIface], m.started[diagnostic.ProbeInternet], m.started[diagnostic.ProbeDNS] = true, true, true
 	m.scheduleStep()
-	if _, ok := m.results[pTargetTCP]; ok {
+	if _, ok := m.results[diagnostic.ProbeTargetTCP]; ok {
 		t.Fatal("an NA dependency must not skip target_tcp")
 	}
-	if !m.started[pTargetTCP] {
+	if !m.started[diagnostic.ProbeTargetTCP] {
 		t.Fatal("target_tcp should be dispatched after an NA dependency")
 	}
 }
