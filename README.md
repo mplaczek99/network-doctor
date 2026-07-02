@@ -54,11 +54,15 @@ is IPv4-only and bounded by a 4-second timeout.
 
 ## Install
 
-Requires Go 1.26+. Runs on **Linux, macOS, and Windows**.
+Runs on **Linux, macOS, and Windows**.
+
+Download a prebuilt binary from the [latest release](https://github.com/mplaczek99/network-doctor/releases/latest), or install with Go 1.26+:
 
 ```sh
 go install github.com/mplaczek99/network-doctor@latest
 ```
+
+Check what you're running with `network-doctor --version`.
 
 Or build from a clone:
 

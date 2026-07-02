@@ -10,9 +10,17 @@ import (
 	"github.com/mplaczek99/network-doctor/internal/ui"
 )
 
+// version is injected by GoReleaser via -X main.version={{.Version}}.
+var version = "dev"
+
 func main() {
 	toolbox := flag.Bool("toolbox", false, "start in toolbox mode")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("network-doctor", version)
+		return
+	}
 	arg := flag.Arg(0)
 
 	var t *diagnostic.Target

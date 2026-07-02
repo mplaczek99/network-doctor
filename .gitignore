@@ -1,6 +1,9 @@
 # Go Binary
 /network-doctor
 
+# GoReleaser
+dist/
+
 # Graphify
 graphify-out/
 
