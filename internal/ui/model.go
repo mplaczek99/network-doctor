@@ -111,6 +111,7 @@ func newModel(t *diagnostic.Target) model {
 	probes := diagnostic.BuildProbes(t)
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
+	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	return model{
 		target:    t,
 		probes:    probes,
@@ -541,7 +542,11 @@ func (m model) View() string {
 	deferred := m.toolbox && !m.chainRan()
 
 	var left strings.Builder
-	left.WriteString(titleStyle.Render("Network Doctor") + "\n")
+	left.WriteString(titleStyle.Render("Network Doctor"))
+	if m.target != nil {
+		left.WriteString(faintStyle.Render(fmt.Sprintf("  %s:%d", m.target.Host, m.target.Port)))
+	}
+	left.WriteString("\n")
 	if n := m.networkLine(); n != "" {
 		left.WriteString(faintStyle.Render(n) + "\n")
 	}
@@ -565,13 +570,7 @@ func (m model) View() string {
 	if deferred {
 		right.WriteString("Toolbox mode — press r to run the diagnostic chain, or pick a tool below.\n")
 	} else {
-		order := make([]diagnostic.ProbeID, len(m.probes))
-		for i, probe := range m.probes {
-			order[i] = probe.ID
-		}
-		if summary := diagnostic.Diagnose(m.target, order, m.results); summary != "" {
-			right.WriteString(summary + "\n\n")
-		}
+		right.WriteString(m.verdictLine() + "\n\n")
 		probe := m.probes[m.selected]
 		right.WriteString(titleStyle.Render(probe.Name) + "\n")
 		id := probe.ID
@@ -599,22 +598,67 @@ func (m model) View() string {
 	rightBox := lipgloss.NewStyle().Width(rightW).Render(right.String())
 	body := lipgloss.JoinHorizontal(lipgloss.Top, leftBox, rightBox)
 
-	help := faintStyle.Render("↑/↓ select · r rerun · q quit")
+	keys := "↑/↓ select · r rerun · q quit"
+	if len(m.jobLines) > 0 {
+		keys = "↑/↓ select · enter output · r rerun · q quit"
+	}
+	help := faintStyle.Render(keys)
 	toolbox := m.toolboxView()
 	// Adaptive tail: the job pane gets whatever height the rest doesn't use.
 	used := strings.Count(body, "\n") + strings.Count(toolbox, "\n") + strings.Count(help, "\n") + 2
 	return body + "\n" + toolbox + "\n" + m.jobView(m.height-used) + help + "\n"
 }
 
+// verdictLine is the one-line plain-English status atop the diagnosis pane: a
+// progress count while checks run, then the Diagnose verdict — red when
+// anything failed, green otherwise (including the all-clear Diagnose leaves
+// implicit for a fully-passing target).
+func (m model) verdictLine() string {
+	if !m.allDone() {
+		return fmt.Sprintf("Running checks… %d of %d done", len(m.results), len(m.probes))
+	}
+	order := make([]diagnostic.ProbeID, len(m.probes))
+	anyFail := false
+	for i, probe := range m.probes {
+		order[i] = probe.ID
+		if m.results[probe.ID].Status == diagnostic.StatusFail {
+			anyFail = true
+		}
+	}
+	summary := diagnostic.Diagnose(m.target, order, m.results)
+	switch {
+	case anyFail:
+		return failStyle.Render(summary)
+	case summary == "":
+		return passStyle.Render("✓ All checks passed — no problems found.")
+	default:
+		return passStyle.Render(summary)
+	}
+}
+
+// styledStatus colors the job status word: green done, red failed/timed out,
+// yellow canceled.
+func styledStatus(s JobStatus) string {
+	switch s {
+	case JobDone:
+		return passStyle.Render(s.String())
+	case JobFailed, JobTimedOut:
+		return failStyle.Render(s.String())
+	case JobCanceled:
+		return skipStyle.Render(s.String())
+	}
+	return s.String()
+}
+
 // outputView is the full-screen scrollable output viewer (Enter).
 func (m model) outputView() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("$ "+m.jobDisplay) + "\n")
-	status := m.jobName + " — " + m.jobStatus.String()
+	status := faintStyle.Render(m.jobName+" — ") + styledStatus(m.jobStatus)
 	if m.activeJob != nil {
-		status += fmt.Sprintf(" (%.0fs)", time.Since(m.jobStart).Seconds())
+		status += faintStyle.Render(fmt.Sprintf(" (%.0fs)", time.Since(m.jobStart).Seconds()))
 	}
-	b.WriteString(faintStyle.Render(status) + "\n")
+	b.WriteString(status + "\n")
 	b.WriteString(m.vp.View() + "\n")
 	b.WriteString(faintStyle.Render(m.vpContext()) + "\n")
 	b.WriteString(faintStyle.Render("↑/↓ scroll · esc back · q quit"))
@@ -662,7 +706,7 @@ func (m model) toolboxView() string {
 		}
 		parts[i] = label
 	}
-	return "Tools: " + strings.Join(parts, "  ") + "\n"
+	return "Tools: " + strings.Join(parts, "  ") + faintStyle.Render("  · press key to run") + "\n"
 }
 
 // jobView renders the job pane with an adaptive tail: avail is the screen
@@ -683,11 +727,11 @@ func (m model) jobView(avail int) string {
 	}
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("$ "+m.jobDisplay) + "\n")
-	status := m.jobName + " — " + m.jobStatus.String()
+	status := faintStyle.Render(m.jobName+" — ") + styledStatus(m.jobStatus)
 	if m.activeJob != nil {
-		status += fmt.Sprintf(" (%.0fs)", time.Since(m.jobStart).Seconds())
+		status += faintStyle.Render(fmt.Sprintf(" (%.0fs)", time.Since(m.jobStart).Seconds()))
 	}
-	b.WriteString(faintStyle.Render(status) + "\n")
+	b.WriteString(status + "\n")
 
 	shown := m.jobLines
 	if len(shown) > tailN {
