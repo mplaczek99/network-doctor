@@ -15,9 +15,7 @@ builds:
         goarch: arm64
 
 archives:
-  - format_overrides:
-      - goos: windows
-        formats: [zip]
+  - formats: [binary]
 
 homebrew_casks:
   - repository:
@@ -31,7 +29,7 @@ homebrew_casks:
       post:
         install: |
           if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/network-doctor"]
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}"]
           end
 
 changelog:
