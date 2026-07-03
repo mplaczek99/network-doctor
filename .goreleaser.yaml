@@ -19,5 +19,20 @@ archives:
       - goos: windows
         formats: [zip]
 
+homebrew_casks:
+  - repository:
+      owner: mplaczek99
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/mplaczek99/network-doctor
+    description: Terminal UI that diagnoses network connectivity and explains where the connection breaks
+    # Unsigned binary: strip Gatekeeper quarantine on install (per GoReleaser docs).
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/network-doctor"]
+          end
+
 changelog:
   use: github-native

@@ -64,7 +64,15 @@ is IPv4-only and bounded by a 4-second timeout.
 
 Runs on **Linux, macOS, and Windows**.
 
-Download a prebuilt binary from the [latest release](https://github.com/mplaczek99/network-doctor/releases/latest), or install with Go 1.26+:
+On macOS, install with Homebrew — this avoids Gatekeeper's
+"unverified developer" prompt:
+
+```sh
+brew tap mplaczek99/tap
+brew install --cask network-doctor
+```
+
+Or download a prebuilt binary from the [latest release](https://github.com/mplaczek99/network-doctor/releases/latest), or install with Go 1.26+:
 
 ```sh
 go install github.com/mplaczek99/network-doctor@latest
