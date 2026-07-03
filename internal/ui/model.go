@@ -37,6 +37,7 @@ const (
 	pendQuit pendingKind = iota
 	pendRerun
 	pendTool
+	pendFix
 )
 
 type pendingAction struct {
@@ -100,6 +101,12 @@ type model struct {
 	entering bool
 	input    textinput.Model
 	inputErr string
+
+	// Auto-fix (f): fixing marks the active job as a fix command — when its
+	// terminal event arrives the chain reruns to verify the fix. verifying
+	// labels that rerun's verdict in the banner.
+	fixing    bool
+	verifying bool
 
 	toolbox bool // --toolbox: chain deferred until 'r'
 
@@ -212,8 +219,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.facts = extractFacts(m.jobToolKey, runtime.GOOS, m.stdoutLines())
 		if m.pending != nil {
 			p := m.pending
-			m.pending = nil
+			m.pending, m.fixing = nil, false // a deferred action overrides the fix flow
 			return m.runPending(p)
+		}
+		if m.fixing {
+			m.fixing = false
+			cmd := m.doRerun() // verification rerun — the fix's real verdict
+			m.verifying = true
+			return m, cmd
 		}
 		return m, nil
 
@@ -271,6 +284,19 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.vp = viewport.New(m.vpWidth(), m.vpHeight())
 		m.refreshViewport()
 		return m, nil
+	case "f":
+		fix := m.fixTool()
+		if fix == nil {
+			return m, nil
+		}
+		if m.activeJob != nil {
+			m.activeJob.cancel()
+			m.pending = &pendingAction{kind: pendFix, tool: *fix}
+			return m, nil
+		}
+		cmd := m.launchTool(*fix)
+		m.fixing = m.activeJob != nil // only a job that actually started can verify
+		return m, cmd
 	}
 	// Tool hotkeys (contextual toolbox).
 	for _, tool := range m.tools {
@@ -370,8 +396,26 @@ func (m *model) runPending(p *pendingAction) (tea.Model, tea.Cmd) {
 		return m, m.doRerun()
 	case pendTool:
 		return m, m.launchTool(p.tool)
+	case pendFix:
+		cmd := m.launchTool(p.tool)
+		m.fixing = m.activeJob != nil
+		return m, cmd
 	}
 	return m, nil
+}
+
+// fixTool returns the auto-fix for the first failed probe, or nil when the run
+// isn't finished, nothing failed, or no safe local fix exists.
+func (m model) fixTool() *Tool {
+	if !m.allDone() {
+		return nil
+	}
+	for _, p := range m.probes {
+		if m.results[p.ID].Status == diagnostic.StatusFail {
+			return fixFor(p.ID, runtime.GOOS)
+		}
+	}
+	return nil
 }
 
 // doRerun bumps the generation (invalidating outstanding probe/job messages),
@@ -384,6 +428,7 @@ func (m *model) doRerun() tea.Cmd {
 	m.results = map[diagnostic.ProbeID]diagnostic.ProbeResult{}
 	m.started = map[diagnostic.ProbeID]bool{}
 	m.activeJob, m.pending = nil, nil
+	m.fixing, m.verifying = false, false
 	m.jobStatus, m.jobLines, m.facts, m.jobDropped, m.jobEvicted = JobQueued, nil, nil, 0, 0
 	if m.viewing {
 		m.refreshViewport()
@@ -732,10 +777,15 @@ func (m model) helpView(deferred bool) string {
 	if deferred {
 		return helpKeys("r", "run the checks", "letter", "runs that tool", "q", "quit")
 	}
+	kv := []string{"↑/↓", "pick a check"}
 	if len(m.jobLines) > 0 {
-		return helpKeys("↑/↓", "pick a check", "enter", "full output", "r", "run again", "q", "quit")
+		kv = append(kv, "enter", "full output")
 	}
-	return helpKeys("↑/↓", "pick a check", "r", "run again", "q", "quit")
+	if m.fixTool() != nil {
+		kv = append(kv, "f", "try a fix")
+	}
+	kv = append(kv, "r", "run again", "q", "quit")
+	return helpKeys(kv...)
 }
 
 // banner is the full-width guidance block under the header: what is happening,
@@ -767,14 +817,24 @@ func (m model) banner() string {
 				summary = fmt.Sprintf("All checks passed — %s:%d looks healthy.", m.target.Host, m.target.Port)
 			}
 		}
+		if m.verifying {
+			summary = "Fix verified: " + summary
+		}
 		return passStyle.Render("✓ " + summary)
 	}
 	if summary == "" {
 		summary = "A check failed — see the ✗ row for details."
 	}
+	if m.verifying {
+		summary = "Fix didn't help: " + summary
+	}
 	lines := []string{failStyle.Render("✗ " + summary)}
 	if firstFail.Fix != "" {
 		lines = append(lines, faintStyle.Render("  Fix: "+firstFail.Fix))
+	}
+	if fix := m.fixTool(); fix != nil {
+		_, _, display := fix.Build(m.target)
+		lines = append(lines, "  Press "+selStyle.Render("f")+" to try a fix ("+display+") — the checks rerun to verify.")
 	}
 	if next := m.nextStep(firstFail.ID); next != "" {
 		lines = append(lines, "  "+next)
