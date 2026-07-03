@@ -98,7 +98,7 @@ literals are rejected (IPv4 only).
 | Key | Action |
 |-----|--------|
 | `↑`/`↓` (`k`/`j`) | select a probe row |
-| `r` | rerun the chain |
+| `r` | rerun — opens a prompt to edit the `network-doctor` arguments (`enter` runs, `esc` backs out) |
 | `q` / `Ctrl-C` | quit |
 
 ## Drill-down tools

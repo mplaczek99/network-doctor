@@ -24,6 +24,7 @@ const (
 // endpoint Port (explicit > scheme default > 443) and the Proto of the
 // protocol rows (explicit scheme wins; else inferred from the effective port).
 type Target struct {
+	Raw          string // original CLI spelling, echoed back in the rerun prompt
 	Host         string
 	IP           net.IP // set iff IsLiteral
 	Port         int
@@ -45,7 +46,7 @@ func ParseTarget(raw string) (*Target, error) {
 	if s == "" {
 		return nil, errors.New("empty target")
 	}
-	t := &Target{}
+	t := &Target{Raw: s}
 	var scheme string
 
 	if i := strings.Index(s, "://"); i >= 0 {

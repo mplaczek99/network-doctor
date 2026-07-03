@@ -253,16 +253,29 @@ func TestDeferredQuit(t *testing.T) {
 	}
 }
 
-// 'r' while a job runs defers a rerun; the terminal event bumps the generation.
+// Committing the rerun prompt while a job runs cancels it and defers the
+// rerun; the terminal event bumps the generation.
 func TestDeferredRerun(t *testing.T) {
 	m := newModel(mustTarget(t, "github.com"))
 	m.generation = 3
-	m.activeJob = &job{id: "j", gen: 3, cancel: func() {}}
+	canceled := false
+	m.activeJob = &job{id: "j", gen: 3, cancel: func() { canceled = true }}
 
 	u, _ := m.Update(keyMsg("r"))
 	nm := asModel(t, u)
+	if !nm.entering {
+		t.Fatal("r must open the rerun prompt")
+	}
+	if canceled {
+		t.Error("opening the prompt must not cancel the job")
+	}
+	u, _ = nm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	nm = asModel(t, u)
 	if nm.pending == nil || nm.pending.kind != pendRerun {
-		t.Fatal("r during a job must defer a rerun")
+		t.Fatal("committing during a job must defer a rerun")
+	}
+	if !canceled {
+		t.Error("committing must cancel the active job")
 	}
 
 	u2, cmd2 := nm.Update(ToolDoneMsg{JobID: "j", Generation: 3, Status: JobCanceled})

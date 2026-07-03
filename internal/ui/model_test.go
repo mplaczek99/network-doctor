@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -32,14 +33,23 @@ func TestStaleProbeDropped(t *testing.T) {
 	}
 }
 
-// 'r' bumps the generation, clears run state, and resets the context.
+// 'r' opens the rerun prompt; Enter bumps the generation, clears run state,
+// and resets the context.
 func TestRerunResets(t *testing.T) {
 	m := newModel(nil)
 	m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{Status: diagnostic.StatusPass}
 	m.started[diagnostic.ProbeIface] = true
 	gen0 := m.generation
-	u, cmd := m.Update(keyMsg("r"))
+	u, _ := m.Update(keyMsg("r"))
 	nm := asModel(t, u)
+	if !nm.entering {
+		t.Fatal("r must open the rerun prompt")
+	}
+	u, cmd := nm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	nm = asModel(t, u)
+	if nm.entering {
+		t.Error("enter must close the prompt")
+	}
 	if nm.generation != gen0+1 {
 		t.Errorf("generation = %d, want %d", nm.generation, gen0+1)
 	}
@@ -51,6 +61,48 @@ func TestRerunResets(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("rerun must issue a cmd")
+	}
+}
+
+// The rerun prompt: prefilled with the current target, esc cancels, a bad
+// line errors and stays open, a good line swaps the target and reruns.
+func TestRerunPrompt(t *testing.T) {
+	m := newModel(mustTarget(t, "github.com"))
+	u, _ := m.Update(keyMsg("r"))
+	nm := asModel(t, u)
+	if !nm.entering {
+		t.Fatal("r must open the rerun prompt")
+	}
+	if nm.input.Value() != "github.com" {
+		t.Errorf("prefill = %q, want github.com", nm.input.Value())
+	}
+	if !strings.Contains(nm.View(), "network-doctor") {
+		t.Error("prompt view must show the command line")
+	}
+
+	u, _ = nm.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if esc := asModel(t, u); esc.entering || esc.generation != 0 {
+		t.Error("esc must close the prompt without a rerun")
+	}
+
+	nm.input.SetValue("one two")
+	u, _ = nm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	bad := asModel(t, u)
+	if !bad.entering || bad.inputErr == "" {
+		t.Error("a bad line must keep the prompt open with an error")
+	}
+
+	bad.input.SetValue("network-doctor example.com:22")
+	u, cmd := bad.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	good := asModel(t, u)
+	if good.entering {
+		t.Error("a good line must close the prompt")
+	}
+	if good.target == nil || good.target.Host != "example.com" || good.target.Port != 22 {
+		t.Errorf("target = %+v, want example.com:22", good.target)
+	}
+	if good.generation != 1 || cmd == nil {
+		t.Error("commit must rerun")
 	}
 }
 

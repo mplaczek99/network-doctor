@@ -2,12 +2,14 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -93,6 +95,12 @@ type model struct {
 	follow  bool
 	vp      viewport.Model
 
+	// Rerun prompt (r): an editable network-doctor command line. Enter parses
+	// and reruns; esc closes without touching the current run.
+	entering bool
+	input    textinput.Model
+	inputErr string
+
 	toolbox bool // --toolbox: chain deferred until 'r'
 
 	width, height int
@@ -160,6 +168,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.entering {
+			return m.handlePromptKey(msg)
+		}
 		if m.viewing {
 			return m.handleViewKey(msg)
 		}
@@ -229,12 +240,19 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.clearCancel()
 		return m, tea.Quit
 	case "r":
-		if m.activeJob != nil {
-			m.activeJob.cancel()
-			m.pending = &pendingAction{kind: pendRerun}
-			return m, nil
+		// Open the rerun prompt; an active job keeps streaming until Enter commits.
+		m.entering, m.inputErr = true, ""
+		ti := textinput.New()
+		ti.Prompt = "network-doctor "
+		ti.PromptStyle = keyStyle
+		ti.Placeholder = "host[:port] or http(s)://host — empty checks the connection"
+		if m.target != nil {
+			ti.SetValue(m.target.Raw)
 		}
-		return m, m.doRerun()
+		ti.Focus()
+		ti.CursorEnd()
+		m.input = ti
+		return m, textinput.Blink
 	case "up", "k":
 		if m.selected > 0 {
 			m.selected--
@@ -282,6 +300,65 @@ func (m model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.vp, cmd = m.vp.Update(msg)
 	m.follow = m.vp.AtBottom()
 	return m, cmd
+}
+
+// handlePromptKey handles keys while the rerun prompt is open. Enter parses
+// the line and reruns (deferred if a job is still running), esc closes, and
+// everything else edits the input.
+func (m model) handlePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.entering = false
+		return m, nil
+	case "ctrl+c":
+		m.entering = false
+		return m.handleKey(msg) // quit path, incl. deferred quit under an active job
+	case "enter":
+		t, err := parseRunArgs(m.input.Value())
+		if err != nil {
+			m.inputErr = err.Error()
+			return m, nil
+		}
+		m.entering = false
+		m.applyTarget(t)
+		if m.activeJob != nil {
+			m.activeJob.cancel()
+			m.pending = &pendingAction{kind: pendRerun}
+			return m, nil
+		}
+		return m, m.doRerun()
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	m.inputErr = ""
+	return m, cmd
+}
+
+// parseRunArgs parses the rerun prompt as a network-doctor command line: an
+// optional leading "network-doctor", then at most one target argument. An
+// empty line means a general, targetless run.
+func parseRunArgs(line string) (*diagnostic.Target, error) {
+	fields := strings.Fields(line)
+	if len(fields) > 0 && fields[0] == "network-doctor" {
+		fields = fields[1:]
+	}
+	switch {
+	case len(fields) == 0:
+		return nil, nil
+	case len(fields) > 1:
+		return nil, errors.New("one target only, e.g. example.com:443")
+	case strings.HasPrefix(fields[0], "-"):
+		return nil, errors.New("flags aren't supported here — enter a target")
+	}
+	return diagnostic.ParseTarget(fields[0])
+}
+
+// applyTarget swaps the run target and rebuilds everything derived from it.
+func (m *model) applyTarget(t *diagnostic.Target) {
+	m.target = t
+	m.probes = diagnostic.BuildProbes(t)
+	m.tools = toolsFor(t, runtime.GOOS)
+	m.selected = 0
 }
 
 func (m *model) runPending(p *pendingAction) (tea.Model, tea.Cmd) {
@@ -547,6 +624,9 @@ func (m model) View() string {
 	header := m.headerView()
 	body := m.bodyView(deferred)
 	help := m.helpView(deferred)
+	if m.entering {
+		help = m.promptView()
+	}
 	toolbox := m.toolboxView()
 	top := header + "\n" + m.banner() + "\n\n"
 	// Adaptive tail: the job pane gets whatever height the rest doesn't use.
@@ -636,6 +716,16 @@ func helpKeys(kv ...string) string {
 		parts = append(parts, keyStyle.Render(kv[i])+" "+faintStyle.Render(kv[i+1]))
 	}
 	return strings.Join(parts, faintStyle.Render("  ·  "))
+}
+
+// promptView is the rerun prompt panel, shown in place of the help bar.
+func (m model) promptView() string {
+	body := panelTitleStyle.Render("Run again") + "\n" + m.input.View()
+	if m.inputErr != "" {
+		body += "\n" + failStyle.Render("✗ "+m.inputErr)
+	}
+	w := max(min(m.width-2, 76), 24)
+	return panelStyle.Width(w).Render(body) + "\n" + helpKeys("enter", "run", "esc", "back")
 }
 
 func (m model) helpView(deferred bool) string {
@@ -814,7 +904,7 @@ func progressBar(done, total, w int) string {
 
 func (m model) toolboxView() string {
 	if len(m.tools) == 0 {
-		return faintStyle.Render("Tools need a host — run: ") + keyStyle.Render("network-doctor <host>") + "\n"
+		return faintStyle.Render("Tools need a host — press ") + keyStyle.Render("r") + faintStyle.Render(" to set one") + "\n"
 	}
 	parts := make([]string, len(m.tools))
 	for i, t := range m.tools {
