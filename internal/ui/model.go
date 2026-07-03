@@ -98,19 +98,28 @@ type model struct {
 	width, height int
 }
 
+// The palette sticks to the 16 ANSI colors so it follows the user's terminal
+// theme, and every status is also carried by a glyph or word — color is never
+// the only signal (NO_COLOR and monochrome terminals stay usable).
 var (
-	passStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	failStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
-	skipStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-	faintStyle = lipgloss.NewStyle().Faint(true)
-	titleStyle = lipgloss.NewStyle().Bold(true)
-	selStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+	accentColor = lipgloss.Color("6")
+	borderColor = lipgloss.Color("8")
+
+	passStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	failStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
+	skipStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	faintStyle      = lipgloss.NewStyle().Faint(true)
+	titleStyle      = lipgloss.NewStyle().Bold(true)
+	selStyle        = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
+	keyStyle        = lipgloss.NewStyle().Foreground(accentColor)
+	panelStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(borderColor).Padding(0, 1)
+	panelTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
 )
 
 func newModel(t *diagnostic.Target) model {
 	probes := diagnostic.BuildProbes(t)
 	sp := spinner.New()
-	sp.Spinner = spinner.Dot
+	sp.Spinner = spinner.MiniDot
 	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	return model{
 		target:    t,
@@ -533,49 +542,58 @@ func (m model) View() string {
 	if m.viewing {
 		return m.outputView()
 	}
-	leftW := 40
-	rightW := m.width - leftW - 3
-	if rightW < 36 {
-		rightW = 36
-	}
-
 	deferred := m.toolbox && !m.chainRan()
 
-	header := titleStyle.Render("Network Doctor")
+	header := m.headerView()
+	body := m.bodyView(deferred)
+	help := m.helpView(deferred)
+	toolbox := m.toolboxView()
+	top := header + "\n" + m.banner() + "\n\n"
+	// Adaptive tail: the job pane gets whatever height the rest doesn't use.
+	used := strings.Count(top, "\n") + strings.Count(body, "\n") + strings.Count(toolbox, "\n") + strings.Count(help, "\n") + 2
+	return top + body + "\n" + toolbox + "\n" + m.jobView(m.height-used) + help + "\n"
+}
+
+// headerView is the one-line masthead: app name, target, connected network.
+func (m model) headerView() string {
+	h := selStyle.Render("◆ ") + titleStyle.Render("Network Doctor")
 	if m.target != nil {
-		header += faintStyle.Render(fmt.Sprintf("  %s:%d", m.target.Host, m.target.Port))
+		h += faintStyle.Render(fmt.Sprintf("  %s:%d", m.target.Host, m.target.Port))
 	}
 	if n := m.networkLine(); n != "" {
-		header += faintStyle.Render("  ·  " + n)
+		h += faintStyle.Render("  ·  " + n)
 	}
+	return h
+}
 
+// bodyView renders the Checks and Details panels side by side, stacking them
+// vertically when the terminal is too narrow for two columns.
+func (m model) bodyView(deferred bool) string {
 	var left strings.Builder
-	left.WriteString(titleStyle.Render("Checks") + "\n")
+	left.WriteString(panelTitleStyle.Render("Checks") + "\n")
 	for i, probe := range m.probes {
 		if deferred {
 			left.WriteString(faintStyle.Render("· "+probe.Name) + "\n")
 			continue
 		}
-		name := probe.Name
+		marker, name := "  ", probe.Name
 		if i == m.selected {
-			name = selStyle.Render("› " + name)
-		} else {
-			name = "  " + name
+			marker, name = selStyle.Render("› "), selStyle.Render(name)
 		}
-		left.WriteString(m.glyph(probe.ID) + " " + name + "\n")
+		left.WriteString(marker + m.glyph(probe.ID) + " " + name + "\n")
 	}
 
 	var right strings.Builder
 	if deferred {
-		right.WriteString(titleStyle.Render("Details") + "\n")
+		right.WriteString(panelTitleStyle.Render("Details") + "\n")
 		right.WriteString(faintStyle.Render("Nothing to show yet — the checks haven't run.") + "\n")
 	} else {
 		probe := m.probes[m.selected]
-		right.WriteString(titleStyle.Render("Details — "+probe.Name) + "\n")
+		right.WriteString(panelTitleStyle.Render("Details — "+probe.Name) + "\n")
 		if r, ok := m.results[probe.ID]; ok {
 			right.WriteString(styledProbeStatus(r.Status) + " — " + r.Detail + "\n")
 			if r.Status == diagnostic.StatusFail && r.Fix != "" {
-				right.WriteString(faintStyle.Render("Fix: "+r.Fix) + "\n")
+				right.WriteString(skipStyle.Render("Fix: ") + r.Fix + "\n")
 			}
 			if r.Source != nil {
 				right.WriteString(faintStyle.Render("src "+r.Source.String()+" "+r.Iface) + "\n")
@@ -592,26 +610,42 @@ func (m model) View() string {
 		}
 	}
 
-	leftBox := lipgloss.NewStyle().Width(leftW).Render(left.String())
-	rightBox := lipgloss.NewStyle().Width(rightW).Render(right.String())
-	body := lipgloss.JoinHorizontal(lipgloss.Top, leftBox, rightBox)
+	leftStr := strings.TrimRight(left.String(), "\n")
+	rightStr := strings.TrimRight(right.String(), "\n")
 
-	help := faintStyle.Render(m.helpLine(deferred))
-	toolbox := m.toolboxView()
-	top := header + "\n\n" + m.banner() + "\n\n"
-	// Adaptive tail: the job pane gets whatever height the rest doesn't use.
-	used := strings.Count(top, "\n") + strings.Count(body, "\n") + strings.Count(toolbox, "\n") + strings.Count(help, "\n") + 2
-	return top + body + "\n" + toolbox + "\n" + m.jobView(m.height-used) + help + "\n"
+	if m.width < 80 { // too narrow for two columns — stack
+		w := max(m.width-2, 24)
+		return lipgloss.JoinVertical(lipgloss.Left,
+			panelStyle.Width(w).Render(leftStr),
+			panelStyle.Width(w).Render(rightStr))
+	}
+	leftW := 38
+	rightW := max(m.width-leftW-5, 36)
+	h := max(lipgloss.Height(leftStr), lipgloss.Height(rightStr))
+	return lipgloss.JoinHorizontal(lipgloss.Top,
+		panelStyle.Width(leftW).Height(h).Render(leftStr),
+		" ",
+		panelStyle.Width(rightW).Height(h).Render(rightStr))
 }
 
-func (m model) helpLine(deferred bool) string {
+// helpKeys renders key/description pairs as a dim help bar with the keys
+// highlighted, e.g. "r run again  ·  q quit".
+func helpKeys(kv ...string) string {
+	parts := make([]string, 0, len(kv)/2)
+	for i := 0; i+1 < len(kv); i += 2 {
+		parts = append(parts, keyStyle.Render(kv[i])+" "+faintStyle.Render(kv[i+1]))
+	}
+	return strings.Join(parts, faintStyle.Render("  ·  "))
+}
+
+func (m model) helpView(deferred bool) string {
 	if deferred {
-		return "r run the checks · a tool key runs that tool · q quit"
+		return helpKeys("r", "run the checks", "letter", "runs that tool", "q", "quit")
 	}
 	if len(m.jobLines) > 0 {
-		return "↑/↓ pick a check · enter full output · r run again · q quit"
+		return helpKeys("↑/↓", "pick a check", "enter", "full output", "r", "run again", "q", "quit")
 	}
-	return "↑/↓ pick a check · r run again · q quit"
+	return helpKeys("↑/↓", "pick a check", "r", "run again", "q", "quit")
 }
 
 // banner is the full-width guidance block under the header: what is happening,
@@ -622,7 +656,9 @@ func (m model) banner() string {
 		return "Welcome! Press " + selStyle.Render("r") + " to check your connection, or run a tool below."
 	}
 	if !m.allDone() {
-		return m.spinner.View() + fmt.Sprintf(" Checking your connection… %d of %d done", len(m.results), len(m.probes))
+		done, total := len(m.results), len(m.probes)
+		return m.spinner.View() + " Checking your connection… " +
+			progressBar(done, total, 20) + faintStyle.Render(fmt.Sprintf(" %d of %d done", done, total))
 	}
 	order := make([]diagnostic.ProbeID, len(m.probes))
 	var firstFail *diagnostic.ProbeResult
@@ -722,7 +758,7 @@ func (m model) outputView() string {
 	b.WriteString(status + "\n")
 	b.WriteString(m.vp.View() + "\n")
 	b.WriteString(faintStyle.Render(m.vpContext()) + "\n")
-	b.WriteString(faintStyle.Render("↑/↓ scroll · esc back · q quit"))
+	b.WriteString(helpKeys("↑/↓", "scroll", "esc", "back", "q", "quit"))
 	return b.String()
 }
 
@@ -767,9 +803,18 @@ var toolPurpose = map[string]string{
 	"m": "path quality",
 }
 
+// progressBar is a w-cell block bar, filled proportionally to done/total.
+func progressBar(done, total, w int) string {
+	if total <= 0 || w <= 0 {
+		return ""
+	}
+	filled := min(done*w/total, w)
+	return selStyle.Render(strings.Repeat("█", filled)) + faintStyle.Render(strings.Repeat("░", w-filled))
+}
+
 func (m model) toolboxView() string {
 	if len(m.tools) == 0 {
-		return faintStyle.Render("Tools need a host — run: network-doctor <host>") + "\n"
+		return faintStyle.Render("Tools need a host — run: ") + keyStyle.Render("network-doctor <host>") + "\n"
 	}
 	parts := make([]string, len(m.tools))
 	for i, t := range m.tools {
@@ -777,13 +822,13 @@ func (m model) toolboxView() string {
 		if purpose == "" {
 			purpose = t.Name
 		}
-		label := "[" + t.Key + "] " + purpose
-		if !t.Available() {
-			label = faintStyle.Render(label + " — " + t.Bin + " missing")
+		if t.Available() {
+			parts[i] = keyStyle.Render("["+t.Key+"]") + " " + purpose
+		} else {
+			parts[i] = faintStyle.Render("[" + t.Key + "] " + purpose + " — " + t.Bin + " missing")
 		}
-		parts[i] = label
 	}
-	line := faintStyle.Render("Dig deeper: ") + strings.Join(parts, " · ")
+	line := titleStyle.Render("Dig deeper") + "  " + strings.Join(parts, faintStyle.Render("  ·  "))
 	return lipgloss.NewStyle().Width(m.vpWidth()).Render(line) + "\n"
 }
 
@@ -795,7 +840,7 @@ func (m model) jobView(avail int) string {
 	}
 	tailN := jobTailLines
 	if m.height > 0 {
-		overhead := 4 // title, status, context note, trailing blank
+		overhead := 5 // rule, title, status, context note, trailing blank
 		if len(m.facts) > 0 {
 			overhead += 1 + len(m.facts)
 		}
@@ -804,6 +849,7 @@ func (m model) jobView(avail int) string {
 		}
 	}
 	var b strings.Builder
+	b.WriteString(faintStyle.Render(strings.Repeat("─", m.vpWidth())) + "\n")
 	b.WriteString(titleStyle.Render("$ "+m.jobDisplay) + "\n")
 	status := faintStyle.Render(m.jobName+" — ") + styledStatus(m.jobStatus)
 	if m.activeJob != nil {
@@ -823,9 +869,9 @@ func (m model) jobView(avail int) string {
 		}
 	}
 	if len(m.facts) > 0 {
-		b.WriteString(titleStyle.Render("Extracted:") + "\n")
+		b.WriteString(titleStyle.Render("Key facts") + "\n")
 		for _, f := range m.facts {
-			b.WriteString("  " + f.Key + ": " + f.Value + "\n")
+			b.WriteString("  " + faintStyle.Render(f.Key+":") + " " + f.Value + "\n")
 		}
 	}
 	older := len(m.jobLines) - len(shown) + m.jobEvicted
