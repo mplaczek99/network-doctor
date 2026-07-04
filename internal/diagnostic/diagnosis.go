@@ -15,6 +15,7 @@ func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 	}
 	pass := func(id ProbeID) bool { return res[id].Status == StatusPass }
 	fail := func(id ProbeID) bool { return res[id].Status == StatusFail }
+	warn := func(id ProbeID) bool { return res[id].Status == StatusWarn }
 	has := func(id ProbeID) bool { _, ok := res[id]; return ok }
 
 	if fail(ProbeIface) {
@@ -26,6 +27,10 @@ func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 		switch {
 		case ip && dn:
 			return "Online — direct TCP egress and DNS both work."
+		case warn(ProbeInternet) && dn:
+			return "Online but degraded — direct egress is impaired (see the ! row for details)."
+		case warn(ProbeInternet) && !dn:
+			return "Internet egress works (degraded) but DNS resolution is failing."
 		case ip && !dn:
 			return "Internet egress works but DNS resolution is failing."
 		case !ip && dn:
@@ -60,7 +65,33 @@ func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 		return "No HTTP response from " + hp + " — application-layer or proxy block."
 	case (has(ProbeSSH) && fail(ProbeSSH)) || (has(ProbeSMTP) && fail(ProbeSMTP)):
 		return hp + " accepts TCP but the service banner check failed."
+	case (has(ProbeSSH) && warn(ProbeSSH)) || (has(ProbeSMTP) && warn(ProbeSMTP)):
+		return hp + " accepts TCP but sent no service banner."
+	case warn(ProbeInternet):
+		return "The target works but direct internet egress is impaired (proxy-only or filtered network?)."
 	default:
 		return ""
 	}
+}
+
+// DowngradeEgress rewrites a direct-egress failure to Warn once another path
+// has proven the network usable: the target TCP connect succeeded, or — in
+// generic mode, where DNS is the only other network path — DNS answered.
+// Call it once, after every probe has a result; degraded-but-functional must
+// not read as an outage.
+func DowngradeEgress(res map[ProbeID]ProbeResult) {
+	r, ok := res[ProbeInternet]
+	if !ok || r.Status != StatusFail {
+		return
+	}
+	other, hasTarget := res[ProbeTargetTCP]
+	if !hasTarget {
+		other = res[ProbeDNS]
+	}
+	if other.Status != StatusPass {
+		return
+	}
+	r.Status = StatusWarn
+	r.Detail += " — but another path works"
+	res[ProbeInternet] = r
 }

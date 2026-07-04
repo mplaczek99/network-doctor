@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -24,6 +25,7 @@ func TestStatusString(t *testing.T) {
 		want string
 	}{
 		{StatusPass, "PASS"},
+		{StatusWarn, "WARN"},
 		{StatusFail, "FAIL"},
 		{StatusSkip, "SKIP"},
 		{StatusNA, "N/A"},
@@ -167,5 +169,67 @@ func TestNetopsInjection(t *testing.T) {
 	r = ops.dnsProbe("example.com", false, nil)(context.Background(), nil)
 	if r.Status != StatusPass || len(r.Addrs) != 1 || !r.Addrs[0].Equal(net.ParseIP("192.0.2.1")) {
 		t.Errorf("dnsProbe with stubs = %+v, want PASS with 192.0.2.1", r)
+	}
+}
+
+// Degraded-but-functional dials downgrade to WARN: high latency, sibling
+// address failures before a win, and an ambiguous source interface. A clean
+// fast dial stays PASS.
+func TestApplyDialWarnings(t *testing.T) {
+	ip := net.ParseIP("192.0.2.1")
+	cases := []struct {
+		name     string
+		attempts []Attempt
+		rtt      time.Duration
+		iface    string
+		want     Status
+		note     string
+	}{
+		{"clean", []Attempt{{IP: ip}}, 10 * time.Millisecond, "eth0", StatusPass, ""},
+		{"high latency", []Attempt{{IP: ip}}, warnRTT, "eth0", StatusWarn, "high latency"},
+		{"partial addresses", []Attempt{{IP: ip, Err: errors.New("refused")}, {IP: ip}}, 10 * time.Millisecond, "eth0", StatusWarn, "1 of 2 address(es) failed"},
+		{"ambiguous iface", []Attempt{{IP: ip}}, 10 * time.Millisecond, "(ambiguous)", StatusWarn, "ambiguous source interface"},
+	}
+	for _, c := range cases {
+		r := ProbeResult{Status: StatusPass, Attempts: c.attempts, Iface: c.iface, Detail: "connected"}
+		applyDialWarnings(&r, c.rtt)
+		if r.Status != c.want {
+			t.Errorf("%s: status = %v, want %v", c.name, r.Status, c.want)
+		}
+		if c.note != "" && !strings.Contains(r.Detail, c.note) {
+			t.Errorf("%s: detail = %q, want it to mention %q", c.name, r.Detail, c.note)
+		}
+	}
+}
+
+// DowngradeEgress turns a direct-egress FAIL into WARN only when another path
+// proved the network works: target TCP when a target exists, else DNS.
+func TestDowngradeEgress(t *testing.T) {
+	cases := []struct {
+		name string
+		res  map[ProbeID]ProbeResult
+		want Status
+	}{
+		{"generic dns works", map[ProbeID]ProbeResult{
+			ProbeInternet: {Status: StatusFail}, ProbeDNS: {Status: StatusPass},
+		}, StatusWarn},
+		{"generic dns fails too", map[ProbeID]ProbeResult{
+			ProbeInternet: {Status: StatusFail}, ProbeDNS: {Status: StatusFail},
+		}, StatusFail},
+		{"target tcp works", map[ProbeID]ProbeResult{
+			ProbeInternet: {Status: StatusFail}, ProbeDNS: {Status: StatusPass}, ProbeTargetTCP: {Status: StatusPass},
+		}, StatusWarn},
+		{"target tcp fails, dns pass not enough", map[ProbeID]ProbeResult{
+			ProbeInternet: {Status: StatusFail}, ProbeDNS: {Status: StatusPass}, ProbeTargetTCP: {Status: StatusFail},
+		}, StatusFail},
+		{"egress passing untouched", map[ProbeID]ProbeResult{
+			ProbeInternet: {Status: StatusPass}, ProbeDNS: {Status: StatusPass},
+		}, StatusPass},
+	}
+	for _, c := range cases {
+		DowngradeEgress(c.res)
+		if got := c.res[ProbeInternet].Status; got != c.want {
+			t.Errorf("%s: internet status = %v, want %v", c.name, got, c.want)
+		}
 	}
 }

@@ -18,7 +18,10 @@ import (
 	"github.com/mplaczek99/network-doctor/internal/textsafe"
 )
 
-// Status is a probe's four-state outcome. Skip = a prerequisite failed (an
+// Status is a probe's five-state outcome. Warn = degraded but functional
+// (high latency, some addresses failing, ambiguous source interface, missing
+// service banner, or direct egress blocked while another path works) — never
+// counted as a failure. Skip = a prerequisite failed (an
 // independent probe is never Skipped for an unrelated sibling's failure).
 // NotApplicable = the probe doesn't apply at all (DNS on an IP literal, a
 // protocol row absent for this port) — not counted as a failure.
@@ -26,6 +29,7 @@ type Status int
 
 const (
 	StatusPass Status = iota
+	StatusWarn
 	StatusFail
 	StatusSkip
 	StatusNA
@@ -35,6 +39,8 @@ func (s Status) String() string {
 	switch s {
 	case StatusPass:
 		return "PASS"
+	case StatusWarn:
+		return "WARN"
 	case StatusFail:
 		return "FAIL"
 	case StatusSkip:
@@ -99,6 +105,9 @@ const (
 	minBudget = 700 * time.Millisecond
 	// maxAttempts bounds the recorded/attempted addresses per probe.
 	maxAttempts = 16
+	// warnRTT is the connect latency above which a successful dial is reported
+	// as degraded rather than a clean pass.
+	warnRTT = 500 * time.Millisecond
 )
 
 // probeHost is the host used by the generic (no-target) DNS + egress probes.
@@ -211,6 +220,7 @@ func (o *netops) internetProbe(ctx context.Context, _ map[ProbeID]ProbeResult) P
 		if gw, found, _ := o.defaultRoute(ctx); found {
 			r.Detail += "; default route via " + gw
 		}
+		applyDialWarnings(&r, rtt)
 		return r
 	}
 	src, iface := o.pathIdentity(ctx, nil, internetEndpoints[0], 443)
@@ -261,6 +271,7 @@ func (o *netops) targetTCPProbe(port int) func(context.Context, map[ProbeID]Prob
 			src, iface := o.pathIdentity(ctx, conn, sel, port)
 			r.Status, r.SelectedIP, r.Source, r.Iface = StatusPass, sel, src, iface
 			r.Detail = fmt.Sprintf("connected to %s:%d in %dms (src %s %s)", sel, port, rtt.Milliseconds(), src, iface)
+			applyDialWarnings(&r, rtt)
 			return r
 		}
 		// All addresses failed: deterministic fallback path = first address.
@@ -370,17 +381,39 @@ func (o *netops) bannerProbe(id ProbeID, label string, port int) Probe {
 		br := bufio.NewReader(io.LimitReader(conn, 1024))
 		line, _ := br.ReadString('\n')
 		line = strings.TrimRight(line, "\r\n")
-		r.Status, r.SelectedIP = StatusPass, ip
+		r.SelectedIP = ip
 		if line == "" {
-			r.Detail = "connected, no banner within deadline"
+			// Port answered but the service said nothing: functional, degraded.
+			r.Status, r.Detail = StatusWarn, "connected, no banner within deadline"
 		} else {
-			r.Detail = "banner: " + textsafe.Clean(line)
+			r.Status, r.Detail = StatusPass, "banner: "+textsafe.Clean(line)
 		}
 		return r
 	}}
 }
 
 // ---- shared helpers ----
+
+// applyDialWarnings downgrades a successful dial result to Warn when it is
+// degraded: high connect latency, sibling addresses that failed before one
+// won, or an ambiguous source interface. Notes are appended to Detail.
+func applyDialWarnings(r *ProbeResult, rtt time.Duration) {
+	var notes []string
+	if rtt >= warnRTT {
+		notes = append(notes, fmt.Sprintf("high latency (%dms)", rtt.Milliseconds()))
+	}
+	// dialIPs returns on the first success, so every earlier attempt failed.
+	if n := len(r.Attempts) - 1; n > 0 {
+		notes = append(notes, fmt.Sprintf("%d of %d address(es) failed", n, len(r.Attempts)))
+	}
+	if r.Iface == "(ambiguous)" {
+		notes = append(notes, "ambiguous source interface")
+	}
+	if len(notes) > 0 {
+		r.Status = StatusWarn
+		r.Detail += " — warning: " + strings.Join(notes, ", ")
+	}
+}
 
 // dialIPs dials each ip:port in order, giving each address a per-destination
 // budget within ctx's deadline, and returns the first successful conn, the IP

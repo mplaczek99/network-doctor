@@ -105,6 +105,7 @@ func TestGlyph(t *testing.T) {
 		want   rune
 	}{
 		{diagnostic.StatusPass, '✓'},
+		{diagnostic.StatusWarn, '!'},
 		{diagnostic.StatusFail, '✗'},
 		{diagnostic.StatusSkip, '⊘'},
 		{diagnostic.StatusNA, '–'},

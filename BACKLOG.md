@@ -32,7 +32,7 @@ then diagnostic quality, usability, and maintenance.
 
 ## Priority 2 — Diagnostic Quality
 
-6. **Add a `Warn` state.** Use it for degraded-but-functional conditions such
+6. **Add a `Warn` state.** FIXED Use it for degraded-but-functional conditions such
    as high latency, ambiguous interfaces, direct egress blocked while another
    path works, missing service banners, and partial address failures.
 

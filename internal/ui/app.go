@@ -15,7 +15,8 @@ func New(target *diagnostic.Target, toolbox bool) tea.Model {
 }
 
 // ExitCode returns 0 in toolbox mode when the chain never ran; 1 if any probe
-// failed or the chain did not finish; otherwise 0. Skip/N/A are not failures.
+// failed or the chain did not finish; otherwise 0. Warn (degraded but
+// functional) and Skip/N/A are not failures.
 func ExitCode(final tea.Model) int {
 	m, ok := final.(model)
 	if !ok {

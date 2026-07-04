@@ -95,8 +95,9 @@ func TestTLSProbeHandshakeFailure(t *testing.T) {
 	}
 }
 
-// A server that connects but never sends a banner is still a PASS (the port
-// answered) with the explicit no-banner detail, once the read deadline hits.
+// A server that connects but never sends a banner is a WARN (the port
+// answered, the service didn't) with the explicit no-banner detail, once the
+// read deadline hits.
 func TestBannerProbeReadTimeout(t *testing.T) {
 	ops := &netops{dialContext: func(context.Context, string, string) (net.Conn, error) {
 		return silentConn{}, nil
@@ -104,8 +105,8 @@ func TestBannerProbeReadTimeout(t *testing.T) {
 	deps := map[ProbeID]ProbeResult{ProbeTargetTCP: {SelectedIP: net.ParseIP("192.0.2.1")}}
 
 	r := ops.bannerProbe(ProbeSSH, "SSH banner", 22).Run(context.Background(), deps)
-	if r.Status != StatusPass || r.Detail != "connected, no banner within deadline" {
-		t.Errorf("silent server = %+v, want PASS with no-banner detail", r)
+	if r.Status != StatusWarn || r.Detail != "connected, no banner within deadline" {
+		t.Errorf("silent server = %+v, want WARN with no-banner detail", r)
 	}
 	if !r.SelectedIP.Equal(net.ParseIP("192.0.2.1")) {
 		t.Errorf("SelectedIP = %v, want the pinned dependency IP", r.SelectedIP)

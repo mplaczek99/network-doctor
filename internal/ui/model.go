@@ -123,6 +123,7 @@ var (
 	passStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 	failStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 	skipStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	warnStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Bold(true)
 	faintStyle      = lipgloss.NewStyle().Faint(true)
 	titleStyle      = lipgloss.NewStyle().Bold(true)
 	selStyle        = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
@@ -199,6 +200,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		res := msg.res
 		res.ID = msg.id
 		m.results[msg.id] = res
+		if m.allDone() {
+			diagnostic.DowngradeEgress(m.results)
+		}
 		return m, tea.Batch(m.scheduleStep()...)
 
 	case ToolOutputMsg:
@@ -502,8 +506,8 @@ func (m *model) scheduleStep() []tea.Cmd {
 }
 
 // depsState reports whether all deps completed (ready) and whether any completed
-// dep blocks this probe. A dep blocks on Fail or Skip (no output); a Pass or an
-// applicable NotApplicable (which still produced output) satisfies.
+// dep blocks this probe. A dep blocks on Fail or Skip (no output); a Pass, a
+// Warn (degraded but produced output), or an applicable NotApplicable satisfies.
 func depsState(deps []diagnostic.ProbeID, res map[diagnostic.ProbeID]diagnostic.ProbeResult) (ready, blocked bool) {
 	for _, d := range deps {
 		r, ok := res[d]
@@ -633,6 +637,8 @@ func (m model) glyph(id diagnostic.ProbeID) string {
 	switch r.Status {
 	case diagnostic.StatusPass:
 		return passStyle.Render("✓")
+	case diagnostic.StatusWarn:
+		return warnStyle.Render("!")
 	case diagnostic.StatusFail:
 		return failStyle.Render("✗")
 	case diagnostic.StatusSkip:
@@ -717,7 +723,7 @@ func (m model) bodyView(deferred bool) string {
 		right.WriteString(panelTitleStyle.Render("Details — "+probe.Name) + "\n")
 		if r, ok := m.results[probe.ID]; ok {
 			right.WriteString(styledProbeStatus(r.Status) + " — " + r.Detail + "\n")
-			if r.Status == diagnostic.StatusFail && r.Fix != "" {
+			if (r.Status == diagnostic.StatusFail || r.Status == diagnostic.StatusWarn) && r.Fix != "" {
 				right.WriteString(skipStyle.Render("Fix: ") + r.Fix + "\n")
 			}
 			if r.Source != nil {
@@ -802,15 +808,27 @@ func (m model) banner() string {
 	}
 	order := make([]diagnostic.ProbeID, len(m.probes))
 	var firstFail *diagnostic.ProbeResult
+	anyWarn := false
 	for i, probe := range m.probes {
 		order[i] = probe.ID
-		if r := m.results[probe.ID]; firstFail == nil && r.Status == diagnostic.StatusFail {
+		r := m.results[probe.ID]
+		if firstFail == nil && r.Status == diagnostic.StatusFail {
 			rr := r
 			firstFail = &rr
 		}
+		anyWarn = anyWarn || r.Status == diagnostic.StatusWarn
 	}
 	summary := diagnostic.Diagnose(m.target, order, m.results)
 	if firstFail == nil {
+		if anyWarn {
+			if summary == "" {
+				summary = "Checks passed with warnings — see the ! row for details."
+			}
+			if m.verifying {
+				summary = "Fix verified: " + summary
+			}
+			return warnStyle.Render("! " + summary)
+		}
 		if summary == "" {
 			summary = "All checks passed — no problems found."
 			if m.target != nil {
@@ -875,6 +893,8 @@ func styledProbeStatus(s diagnostic.Status) string {
 	switch s {
 	case diagnostic.StatusPass:
 		return passStyle.Render(s.String())
+	case diagnostic.StatusWarn:
+		return warnStyle.Render(s.String())
 	case diagnostic.StatusFail:
 		return failStyle.Render(s.String())
 	case diagnostic.StatusSkip:
