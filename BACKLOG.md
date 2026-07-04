@@ -10,17 +10,17 @@ then diagnostic quality, usability, and maintenance.
    will allow deterministic testing of dialing, DNS, interfaces, and HTTP
    without real network access. Start in `internal/diagnostic/checks.go`.
 
-2. **Fix cancellation in `pathIdentity`.** Its UDP fallback uses `net.Dial`
+2. **Fix cancellation in `pathIdentity`.** FIXED Its UDP fallback uses `net.Dial`
    without the probe context, violating the bounded-probe contract. Use
    `DialContext` and pass the active context through the helper.
 
-3. **Remove real sockets from unit tests.** Tests in
+3. **Remove real sockets from unit tests.** FIXED Tests in
    `internal/diagnostic/checks_extra_test.go` bind loopback ports, and one test
    dereferences the listener without checking the error. Replace these with
    fake dialers and reserve actual socket tests for an optional integration
    suite.
 
-4. **Refactor CLI parsing into a testable function.** Introduce a function such
+4. **Refactor CLI parsing into a testable function.** FIXED Introduce a function such
    as `run(args, stdout, stderr) int`, then keep `main` responsible only for
    calling it and exiting. Reject extra positional arguments instead of
    silently ignoring everything after `flag.Arg(0)`.
