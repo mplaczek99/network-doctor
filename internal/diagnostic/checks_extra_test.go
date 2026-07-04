@@ -2,11 +2,21 @@ package diagnostic
 
 import (
 	"context"
+	"errors"
 	"net"
-	"strconv"
 	"testing"
 	"time"
 )
+
+// fakeConn is a no-network net.Conn stand-in; only LocalAddr and Close are
+// used by the code under test.
+type fakeConn struct {
+	net.Conn
+	local net.Addr
+}
+
+func (c fakeConn) LocalAddr() net.Addr { return c.local }
+func (fakeConn) Close() error          { return nil }
 
 func TestStatusString(t *testing.T) {
 	cases := []struct {
@@ -55,25 +65,23 @@ func TestBuildProbesProtoShapes(t *testing.T) {
 	}
 }
 
-// dialIPs against a live loopback listener returns a connection pinned to the
-// address that won, with the attempt recorded. Offline-safe (loopback only).
+// dialIPs with a stubbed dialer returns a connection pinned to the address
+// that won, with the attempt recorded. No real sockets.
 func TestDialIPsSuccess(t *testing.T) {
-	ln, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	defer ln.Close()
-	port := ln.Addr().(*net.TCPAddr).Port
+	ops := &netops{dialContext: func(context.Context, string, string) (net.Conn, error) {
+		time.Sleep(time.Millisecond) // make the recorded RTT observable
+		return fakeConn{}, nil
+	}}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	conn, sel, attempts, rtt := defaultOps.dialIPs(ctx, []net.IP{net.ParseIP("127.0.0.1")}, port)
+	conn, sel, attempts, rtt := ops.dialIPs(ctx, []net.IP{net.ParseIP("192.0.2.1")}, 80)
 	if conn == nil {
-		t.Fatal("expected a connection to the loopback listener")
+		t.Fatal("expected a connection from the stub dialer")
 	}
 	defer conn.Close()
-	if !sel.Equal(net.ParseIP("127.0.0.1")) {
-		t.Errorf("selected = %v, want 127.0.0.1", sel)
+	if !sel.Equal(net.ParseIP("192.0.2.1")) {
+		t.Errorf("selected = %v, want 192.0.2.1", sel)
 	}
 	if len(attempts) != 1 {
 		t.Errorf("attempts = %d, want 1", len(attempts))
@@ -90,45 +98,43 @@ func TestDialIPsEmpty(t *testing.T) {
 	}
 }
 
-// A refused loopback port fails fast and deterministically: no conn, the failed
-// attempt is recorded with its error.
+// A refused dial fails deterministically: no conn, the failed attempt is
+// recorded with its error.
 func TestDialIPsRefused(t *testing.T) {
-	ln, _ := net.Listen("tcp4", "127.0.0.1:0")
-	port := ln.Addr().(*net.TCPAddr).Port
-	ln.Close() // nothing listening now → connection refused
+	errRefused := errors.New("connection refused")
+	ops := &netops{dialContext: func(context.Context, string, string) (net.Conn, error) {
+		return nil, errRefused
+	}}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	conn, _, attempts, _ := defaultOps.dialIPs(ctx, []net.IP{net.ParseIP("127.0.0.1")}, port)
+	conn, _, attempts, _ := ops.dialIPs(context.Background(), []net.IP{net.ParseIP("192.0.2.1")}, 80)
 	if conn != nil {
 		conn.Close()
-		t.Fatal("expected no connection to a closed port")
+		t.Fatal("expected no connection from the failing dialer")
 	}
-	if len(attempts) != 1 || attempts[0].Err == nil {
-		t.Errorf("want one failed attempt with an error, got %+v", attempts)
+	if len(attempts) != 1 || !errors.Is(attempts[0].Err, errRefused) {
+		t.Errorf("want one failed attempt with the dialer's error, got %+v", attempts)
 	}
 }
 
-// pathIdentity reads the winning conn's LocalAddr as ground truth.
+// pathIdentity reads the winning conn's LocalAddr as ground truth and maps it
+// back to an interface via the stubbed interface list.
 func TestPathIdentityFromConn(t *testing.T) {
-	ln, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
+	ops := &netops{
+		interfaces: func() ([]net.Interface, error) {
+			return []net.Interface{{Name: "fake0"}}, nil
+		},
+		interfaceAddrs: func(*net.Interface) ([]net.Addr, error) {
+			return []net.Addr{&net.IPNet{IP: net.ParseIP("192.0.2.7"), Mask: net.CIDRMask(24, 32)}}, nil
+		},
 	}
-	defer ln.Close()
-	port := ln.Addr().(*net.TCPAddr).Port
-	conn, err := net.Dial("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	defer conn.Close()
+	conn := fakeConn{local: &net.TCPAddr{IP: net.ParseIP("192.0.2.7"), Port: 40000}}
 
-	src, iface := defaultOps.pathIdentity(context.Background(), conn, net.ParseIP("127.0.0.1"), port)
-	if src == nil || !src.IsLoopback() {
-		t.Errorf("src = %v, want a loopback address", src)
+	src, iface := ops.pathIdentity(context.Background(), conn, net.ParseIP("192.0.2.1"), 80)
+	if !src.Equal(net.ParseIP("192.0.2.7")) {
+		t.Errorf("src = %v, want 192.0.2.7", src)
 	}
-	if iface == "" {
-		t.Error("iface should resolve for the loopback source")
+	if iface != "fake0" {
+		t.Errorf("iface = %q, want fake0", iface)
 	}
 }
 
