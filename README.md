@@ -15,6 +15,7 @@ Network Doctor  github.com:443  ·  Wi-Fi: HomeNet
 ✗ Cannot resolve github.com — DNS failure. (The general internet is reachable.)
   Fix: check /etc/resolv.conf / DNS
   Next: press d — DNS lookup (dig)
+  Press f to try a fix (resolvectl flush-caches) — the checks rerun to verify.
 
 Checks                        Details — DNS github.com
 ✓ › Interface                 FAIL — no A records
@@ -72,6 +73,12 @@ brew tap mplaczek99/tap
 brew install --cask network-doctor
 ```
 
+On Arch Linux, from the [AUR](https://aur.archlinux.org/packages/network-doctor):
+
+```sh
+yay -S network-doctor   # or paru — builds from source
+```
+
 Or download a prebuilt binary from the [latest release](https://github.com/mplaczek99/network-doctor/releases/latest), or install with Go 1.26+:
 
 ```sh
@@ -107,7 +114,18 @@ literals are rejected (IPv4 only).
 |-----|--------|
 | `↑`/`↓` (`k`/`j`) | select a probe row |
 | `r` | rerun — opens a prompt to edit the `network-doctor` arguments (`enter` runs, `esc` backs out) |
+| `f` | try an automatic fix for the first failed check, then rerun the chain to verify |
 | `q` / `Ctrl-C` | quit |
+
+**Auto-fix** (`f`, experimental): runs a mild, OS-specific remedy through the
+same job pipeline as the drill-down tools — flush the DNS cache
+(`resolvectl flush-caches` / `dscacheutil -flushcache` / `ipconfig /flushdns`)
+for a DNS failure, `nmcli networking on` for a downed interface on Linux. No
+sudo, no config rewrites. When the fix job ends, the whole chain reruns
+automatically — that rerun is the verification, labeled in the banner. Remote
+failures (target TCP/TLS/HTTP) have no local fix and offer none. The fix
+selection and verify flow are unit-tested; the fix commands themselves haven't
+been exercised against real broken networks on every OS yet.
 
 ## Drill-down tools
 
@@ -172,11 +190,13 @@ Windows only. Everything load-bearing (route table cells, the untranslated
 ## Roadmap
 
 Implemented: native DAG probes + diagnosis engine + two-pane UI (Phase 1),
-cancellable streaming tool jobs with `ping`/`dig`/`curl` (Phase 2), and
-`traceroute`/`mtr`/`ss`/`ip` + a scrollable output viewport + `--toolbox` mode (Phase 3).
+cancellable streaming tool jobs with `ping`/`dig`/`curl` (Phase 2),
+`traceroute`/`mtr`/`ss`/`ip` + a scrollable output viewport + `--toolbox` mode
+(Phase 3), and an experimental `f` auto-fix-and-verify hotkey.
 
-Still to come: `nmap`, multiple concurrent jobs, a `Warn` state, and an
-mtr-parsed route-quality row. See `PLAN.md`.
+Still to come (see `BACKLOG.md` for the full ordered list): dependency-injected
+probes for deterministic tests, a `Warn` state, proxy-aware diagnosis, IPv6,
+mtr-parsed route quality, `--json` output, multiple concurrent jobs, and `nmap`.
 
 ## Built with
 
