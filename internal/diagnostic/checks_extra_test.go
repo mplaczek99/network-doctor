@@ -67,7 +67,7 @@ func TestDialIPsSuccess(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	conn, sel, attempts, rtt := dialIPs(ctx, []net.IP{net.ParseIP("127.0.0.1")}, port)
+	conn, sel, attempts, rtt := defaultOps.dialIPs(ctx, []net.IP{net.ParseIP("127.0.0.1")}, port)
 	if conn == nil {
 		t.Fatal("expected a connection to the loopback listener")
 	}
@@ -84,7 +84,7 @@ func TestDialIPsSuccess(t *testing.T) {
 }
 
 func TestDialIPsEmpty(t *testing.T) {
-	conn, sel, attempts, rtt := dialIPs(context.Background(), nil, 80)
+	conn, sel, attempts, rtt := defaultOps.dialIPs(context.Background(), nil, 80)
 	if conn != nil || sel != nil || attempts != nil || rtt != 0 {
 		t.Errorf("dialIPs(empty) = (%v,%v,%v,%v), want all zero", conn, sel, attempts, rtt)
 	}
@@ -99,7 +99,7 @@ func TestDialIPsRefused(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	conn, _, attempts, _ := dialIPs(ctx, []net.IP{net.ParseIP("127.0.0.1")}, port)
+	conn, _, attempts, _ := defaultOps.dialIPs(ctx, []net.IP{net.ParseIP("127.0.0.1")}, port)
 	if conn != nil {
 		conn.Close()
 		t.Fatal("expected no connection to a closed port")
@@ -123,7 +123,7 @@ func TestPathIdentityFromConn(t *testing.T) {
 	}
 	defer conn.Close()
 
-	src, iface := pathIdentity(conn, net.ParseIP("127.0.0.1"), port)
+	src, iface := defaultOps.pathIdentity(conn, net.ParseIP("127.0.0.1"), port)
 	if src == nil || !src.IsLoopback() {
 		t.Errorf("src = %v, want a loopback address", src)
 	}
@@ -135,7 +135,31 @@ func TestPathIdentityFromConn(t *testing.T) {
 // ifaceForIP for an address assigned to no interface is an explicit unknown,
 // never a guess. 203.0.113.0/24 is TEST-NET-3 (RFC 5737) — never local.
 func TestIfaceForIPUnknown(t *testing.T) {
-	if got := ifaceForIP(net.ParseIP("203.0.113.213")); got != "(unknown iface)" {
+	if got := defaultOps.ifaceForIP(net.ParseIP("203.0.113.213")); got != "(unknown iface)" {
 		t.Errorf("ifaceForIP(unassigned) = %q, want '(unknown iface)'", got)
+	}
+}
+
+// Probes run against stubbed netops: no real network, DNS, or OS interface
+// access — the point of the function-field seam.
+func TestNetopsInjection(t *testing.T) {
+	ops := &netops{
+		interfaces: func() ([]net.Interface, error) {
+			return []net.Interface{{Name: "fake0", Flags: net.FlagUp | net.FlagRunning}}, nil
+		},
+		lookupIP: func(context.Context, string) ([]net.IP, error) {
+			return []net.IP{net.ParseIP("192.0.2.1")}, nil
+		},
+		ssid: func(context.Context, string) string { return "FakeNet" },
+	}
+
+	r := ops.ifaceProbe(context.Background(), nil)
+	if r.Status != StatusPass || r.Iface != "fake0" || r.Network != "FakeNet" {
+		t.Errorf("ifaceProbe with stubs = %+v, want PASS on fake0/FakeNet", r)
+	}
+
+	r = ops.dnsProbe("example.com", false, nil)(context.Background(), nil)
+	if r.Status != StatusPass || len(r.Addrs) != 1 || !r.Addrs[0].Equal(net.ParseIP("192.0.2.1")) {
+		t.Errorf("dnsProbe with stubs = %+v, want PASS with 192.0.2.1", r)
 	}
 }

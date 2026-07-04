@@ -108,47 +108,79 @@ const probeHost = "connectivitycheck.gstatic.com"
 // wins. Honestly "direct TCP egress" — proxy-only networks can fail this.
 var internetEndpoints = []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("8.8.8.8")}
 
+// netops holds every network/OS touchpoint the probes use, as function fields
+// so tests can stub them and run probes deterministically without real
+// network access. Production code always goes through defaultOps.
+type netops struct {
+	interfaces     func() ([]net.Interface, error)
+	interfaceAddrs func(*net.Interface) ([]net.Addr, error)
+	lookupIP       func(ctx context.Context, host string) ([]net.IP, error)
+	dialContext    func(ctx context.Context, network, addr string) (net.Conn, error)
+	dialTLS        func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error)
+	dial           func(network, addr string) (net.Conn, error)
+	ssid           func(ctx context.Context, iface string) string
+	defaultRoute   func(ctx context.Context) (string, bool, error)
+}
+
+var defaultOps = &netops{
+	interfaces:     net.Interfaces,
+	interfaceAddrs: (*net.Interface).Addrs,
+	lookupIP: func(ctx context.Context, host string) ([]net.IP, error) {
+		return net.DefaultResolver.LookupIP(ctx, "ip4", host)
+	},
+	dialContext: new(net.Dialer).DialContext,
+	dialTLS: func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
+		d := tls.Dialer{NetDialer: new(net.Dialer), Config: cfg}
+		return d.DialContext(ctx, network, addr)
+	},
+	dial:         net.Dial,
+	ssid:         ssid,
+	defaultRoute: defaultRoute,
+}
+
 // BuildProbes constructs the DAG for the given target (nil = generic mode).
-func BuildProbes(t *Target) []Probe {
-	iface := Probe{ID: ProbeIface, Name: "Interface", Run: ifaceProbe}
-	internet := Probe{ID: ProbeInternet, Name: "Internet (TCP egress)", Deps: []ProbeID{ProbeIface}, Run: internetProbe}
+func BuildProbes(t *Target) []Probe { return defaultOps.buildProbes(t) }
+
+func (o *netops) buildProbes(t *Target) []Probe {
+	iface := Probe{ID: ProbeIface, Name: "Interface", Run: o.ifaceProbe}
+	internet := Probe{ID: ProbeInternet, Name: "Internet (TCP egress)", Deps: []ProbeID{ProbeIface}, Run: o.internetProbe}
 
 	if t == nil {
 		// Egress and DNS are siblings: each depends only on the interface, so an
 		// egress failure never hides a DNS failure (or vice-versa).
-		dns := Probe{ID: ProbeDNS, Name: "DNS", Deps: []ProbeID{ProbeIface}, Run: dnsProbe(probeHost, false, nil)}
+		dns := Probe{ID: ProbeDNS, Name: "DNS", Deps: []ProbeID{ProbeIface}, Run: o.dnsProbe(probeHost, false, nil)}
 		return []Probe{iface, internet, dns}
 	}
 
 	host, port := t.Host, t.Port
-	dns := Probe{ID: ProbeDNS, Name: "DNS " + host, Deps: []ProbeID{ProbeIface}, Run: dnsProbe(host, t.IsLiteral, t.IP)}
-	ttcp := Probe{ID: ProbeTargetTCP, Name: fmt.Sprintf("TCP %s:%d", host, port), Deps: []ProbeID{ProbeDNS}, Run: targetTCPProbe(port)}
+	dns := Probe{ID: ProbeDNS, Name: "DNS " + host, Deps: []ProbeID{ProbeIface}, Run: o.dnsProbe(host, t.IsLiteral, t.IP)}
+	ttcp := Probe{ID: ProbeTargetTCP, Name: fmt.Sprintf("TCP %s:%d", host, port), Deps: []ProbeID{ProbeDNS}, Run: o.targetTCPProbe(port)}
 	probes := []Probe{iface, internet, dns, ttcp}
 
 	switch t.Proto {
 	case ProtoTLSHTTP:
 		probes = append(probes,
-			Probe{ID: ProbeTLS, Name: "TLS " + host, Deps: []ProbeID{ProbeTargetTCP}, Run: tlsProbe(host, port)},
-			Probe{ID: ProbeHTTP, Name: "HTTP " + host, Deps: []ProbeID{ProbeDNS}, Run: httpProbe(ProbeHTTP, host, 80, "http", ProbeDNS)},
-			Probe{ID: ProbeHTTPS, Name: "HTTPS " + host, Deps: []ProbeID{ProbeTLS}, Run: httpProbe(ProbeHTTPS, host, port, "https", ProbeTLS)},
+			Probe{ID: ProbeTLS, Name: "TLS " + host, Deps: []ProbeID{ProbeTargetTCP}, Run: o.tlsProbe(host, port)},
+			Probe{ID: ProbeHTTP, Name: "HTTP " + host, Deps: []ProbeID{ProbeDNS}, Run: o.httpProbe(ProbeHTTP, host, 80, "http", ProbeDNS)},
+			Probe{ID: ProbeHTTPS, Name: "HTTPS " + host, Deps: []ProbeID{ProbeTLS}, Run: o.httpProbe(ProbeHTTPS, host, port, "https", ProbeTLS)},
 		)
 	case ProtoHTTP:
 		probes = append(probes,
-			Probe{ID: ProbeHTTP, Name: "HTTP " + host, Deps: []ProbeID{ProbeTargetTCP}, Run: httpProbe(ProbeHTTP, host, port, "http", ProbeTargetTCP)},
+			Probe{ID: ProbeHTTP, Name: "HTTP " + host, Deps: []ProbeID{ProbeTargetTCP}, Run: o.httpProbe(ProbeHTTP, host, port, "http", ProbeTargetTCP)},
 		)
 	case ProtoSSH:
-		probes = append(probes, bannerProbe(ProbeSSH, fmt.Sprintf("SSH banner %s:%d", host, port), port))
+		probes = append(probes, o.bannerProbe(ProbeSSH, fmt.Sprintf("SSH banner %s:%d", host, port), port))
 	case ProtoSMTP:
-		probes = append(probes, bannerProbe(ProbeSMTP, fmt.Sprintf("SMTP banner %s:%d", host, port), port))
+		probes = append(probes, o.bannerProbe(ProbeSMTP, fmt.Sprintf("SMTP banner %s:%d", host, port), port))
 	}
 	return probes
 }
 
 // ---- probe implementations ----
 
-func ifaceProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
+func (o *netops) ifaceProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
 	r := ProbeResult{ID: ProbeIface}
-	ifaces, err := net.Interfaces()
+	ifaces, err := o.interfaces()
 	if err != nil {
 		r.Status = StatusFail
 		r.Detail, r.Fix = "cannot list interfaces: "+err.Error(), "check permissions / network stack"
@@ -160,7 +192,7 @@ func ifaceProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
 		}
 		if ifi.Flags&net.FlagUp != 0 && ifi.Flags&net.FlagRunning != 0 {
 			r.Status, r.Iface, r.Detail = StatusPass, ifi.Name, "interface "+ifi.Name+" is up"
-			r.Network = ssid(ctx, ifi.Name)
+			r.Network = o.ssid(ctx, ifi.Name)
 			return r
 		}
 	}
@@ -169,28 +201,28 @@ func ifaceProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
 	return r
 }
 
-func internetProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
+func (o *netops) internetProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
 	r := ProbeResult{ID: ProbeInternet}
-	conn, sel, attempts, rtt := dialIPs(ctx, internetEndpoints, 443)
+	conn, sel, attempts, rtt := o.dialIPs(ctx, internetEndpoints, 443)
 	r.Attempts = attempts
 	if conn != nil {
 		defer conn.Close()
-		src, iface := pathIdentity(conn, sel, 443)
+		src, iface := o.pathIdentity(conn, sel, 443)
 		r.Status, r.SelectedIP, r.Source, r.Iface = StatusPass, sel, src, iface
 		r.Detail = fmt.Sprintf("direct egress via %s in %dms (src %s %s)", sel, rtt.Milliseconds(), src, iface)
-		if gw, found, _ := defaultRoute(ctx); found {
+		if gw, found, _ := o.defaultRoute(ctx); found {
 			r.Detail += "; default route via " + gw
 		}
 		return r
 	}
-	src, iface := pathIdentity(nil, internetEndpoints[0], 443)
+	src, iface := o.pathIdentity(nil, internetEndpoints[0], 443)
 	r.Status, r.Source, r.Iface = StatusFail, src, iface
 	r.Detail = "no direct TCP egress to 1.1.1.1/8.8.8.8:443"
 	r.Fix = "no internet egress — proxy-only/filtered network? check upstream"
 	return r
 }
 
-func dnsProbe(host string, literal bool, litIP net.IP) func(context.Context, map[ProbeID]ProbeResult) ProbeResult {
+func (o *netops) dnsProbe(host string, literal bool, litIP net.IP) func(context.Context, map[ProbeID]ProbeResult) ProbeResult {
 	return func(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
 		r := ProbeResult{ID: ProbeDNS}
 		if literal {
@@ -198,7 +230,7 @@ func dnsProbe(host string, literal bool, litIP net.IP) func(context.Context, map
 			r.Detail = "literal IP " + litIP.String() + " — no DNS needed"
 			return r
 		}
-		ips, err := net.DefaultResolver.LookupIP(ctx, "ip4", host)
+		ips, err := o.lookupIP(ctx, host)
 		if err != nil {
 			r.Status = StatusFail
 			r.Detail = "cannot resolve " + host + ": " + textsafe.Clean(err.Error())
@@ -216,7 +248,7 @@ func dnsProbe(host string, literal bool, litIP net.IP) func(context.Context, map
 	}
 }
 
-func targetTCPProbe(port int) func(context.Context, map[ProbeID]ProbeResult) ProbeResult {
+func (o *netops) targetTCPProbe(port int) func(context.Context, map[ProbeID]ProbeResult) ProbeResult {
 	return func(ctx context.Context, deps map[ProbeID]ProbeResult) ProbeResult {
 		r := ProbeResult{ID: ProbeTargetTCP}
 		addrs := deps[ProbeDNS].Addrs
@@ -224,17 +256,17 @@ func targetTCPProbe(port int) func(context.Context, map[ProbeID]ProbeResult) Pro
 			r.Status, r.Detail = StatusFail, "no resolved addresses"
 			return r
 		}
-		conn, sel, attempts, rtt := dialIPs(ctx, addrs, port)
+		conn, sel, attempts, rtt := o.dialIPs(ctx, addrs, port)
 		r.Attempts = attempts
 		if conn != nil {
 			defer conn.Close()
-			src, iface := pathIdentity(conn, sel, port)
+			src, iface := o.pathIdentity(conn, sel, port)
 			r.Status, r.SelectedIP, r.Source, r.Iface = StatusPass, sel, src, iface
 			r.Detail = fmt.Sprintf("connected to %s:%d in %dms (src %s %s)", sel, port, rtt.Milliseconds(), src, iface)
 			return r
 		}
 		// All addresses failed: deterministic fallback path = first address.
-		src, iface := pathIdentity(nil, addrs[0], port)
+		src, iface := o.pathIdentity(nil, addrs[0], port)
 		r.Status, r.Source, r.Iface = StatusFail, src, iface
 		r.Detail = fmt.Sprintf("port %d unreachable on all %d address(es)", port, len(addrs))
 		r.Fix = fmt.Sprintf("port %d blocked/refused — firewall, wrong network, or VPN routing?", port)
@@ -242,7 +274,7 @@ func targetTCPProbe(port int) func(context.Context, map[ProbeID]ProbeResult) Pro
 	}
 }
 
-func tlsProbe(host string, port int) func(context.Context, map[ProbeID]ProbeResult) ProbeResult {
+func (o *netops) tlsProbe(host string, port int) func(context.Context, map[ProbeID]ProbeResult) ProbeResult {
 	return func(ctx context.Context, deps map[ProbeID]ProbeResult) ProbeResult {
 		r := ProbeResult{ID: ProbeTLS}
 		ip := deps[ProbeTargetTCP].SelectedIP
@@ -250,8 +282,7 @@ func tlsProbe(host string, port int) func(context.Context, map[ProbeID]ProbeResu
 			r.Status, r.Detail = StatusSkip, "no pinned IP from Target TCP"
 			return r
 		}
-		d := tls.Dialer{NetDialer: &net.Dialer{}, Config: &tls.Config{ServerName: host}}
-		conn, err := d.DialContext(ctx, "tcp4", net.JoinHostPort(ip.String(), strconv.Itoa(port)))
+		conn, err := o.dialTLS(ctx, "tcp4", net.JoinHostPort(ip.String(), strconv.Itoa(port)), &tls.Config{ServerName: host})
 		if err != nil {
 			r.Status = StatusFail
 			r.Detail = "TLS handshake failed: " + textsafe.Clean(err.Error())
@@ -264,7 +295,7 @@ func tlsProbe(host string, port int) func(context.Context, map[ProbeID]ProbeResu
 	}
 }
 
-func httpProbe(id ProbeID, host string, port int, scheme string, addressDep ProbeID) func(context.Context, map[ProbeID]ProbeResult) ProbeResult {
+func (o *netops) httpProbe(id ProbeID, host string, port int, scheme string, addressDep ProbeID) func(context.Context, map[ProbeID]ProbeResult) ProbeResult {
 	return func(ctx context.Context, deps map[ProbeID]ProbeResult) ProbeResult {
 		r := ProbeResult{ID: id}
 		protocol := strings.ToUpper(scheme)
@@ -283,7 +314,7 @@ func httpProbe(id ProbeID, host string, port int, scheme string, addressDep Prob
 		tr := &http.Transport{
 			Proxy: nil,
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				conn, selected, attempts, _ := dialIPs(ctx, addrs, port)
+				conn, selected, attempts, _ := o.dialIPs(ctx, addrs, port)
 				r.SelectedIP, r.Attempts = selected, attempts
 				if conn == nil {
 					if len(attempts) > 0 && attempts[len(attempts)-1].Err != nil {
@@ -321,7 +352,7 @@ func httpProbe(id ProbeID, host string, port int, scheme string, addressDep Prob
 	}
 }
 
-func bannerProbe(id ProbeID, label string, port int) Probe {
+func (o *netops) bannerProbe(id ProbeID, label string, port int) Probe {
 	return Probe{ID: id, Name: label, Deps: []ProbeID{ProbeTargetTCP}, Run: func(ctx context.Context, deps map[ProbeID]ProbeResult) ProbeResult {
 		r := ProbeResult{ID: id}
 		ip := deps[ProbeTargetTCP].SelectedIP
@@ -329,8 +360,7 @@ func bannerProbe(id ProbeID, label string, port int) Probe {
 			r.Status, r.Detail = StatusSkip, "no pinned IP from Target TCP"
 			return r
 		}
-		var d net.Dialer
-		conn, err := d.DialContext(ctx, "tcp4", net.JoinHostPort(ip.String(), strconv.Itoa(port)))
+		conn, err := o.dialContext(ctx, "tcp4", net.JoinHostPort(ip.String(), strconv.Itoa(port)))
 		if err != nil {
 			r.Status, r.Detail = StatusFail, "connect failed: "+textsafe.Clean(err.Error())
 			return r
@@ -358,7 +388,7 @@ func bannerProbe(id ProbeID, label string, port int) Probe {
 // budget within ctx's deadline, and returns the first successful conn, the IP
 // that won (pinned for protocol probes), the bounded attempt record, and the
 // winning RTT. ponytail: serial dial; happy-eyeballs parallelism is a later opt.
-func dialIPs(ctx context.Context, ips []net.IP, port int) (net.Conn, net.IP, []Attempt, time.Duration) {
+func (o *netops) dialIPs(ctx context.Context, ips []net.IP, port int) (net.Conn, net.IP, []Attempt, time.Duration) {
 	var attempts []Attempt
 	n := len(ips)
 	if n == 0 {
@@ -371,13 +401,12 @@ func dialIPs(ctx context.Context, ips []net.IP, port int) (net.Conn, net.IP, []A
 	if budget < minBudget {
 		budget = minBudget
 	}
-	var d net.Dialer
 	for i := 0; i < n; i++ {
 		ip := ips[i]
 		addr := net.JoinHostPort(ip.String(), strconv.Itoa(port))
 		actx, cancel := context.WithTimeout(ctx, budget)
 		start := time.Now()
-		conn, err := d.DialContext(actx, "tcp4", addr)
+		conn, err := o.dialContext(actx, "tcp4", addr)
 		dur := time.Since(start)
 		cancel()
 		attempts = append(attempts, Attempt{IP: ip, Dur: dur, Err: err})
@@ -395,14 +424,14 @@ func dialIPs(ctx context.Context, ips []net.IP, port int) (net.Conn, net.IP, []A
 // successful connect it reads the winning LocalAddr (ground truth); otherwise it
 // falls back to a UDP "connect" (sends no packets) for path identity only — not
 // a reachability claim.
-func pathIdentity(conn net.Conn, dstIP net.IP, port int) (net.IP, string) {
+func (o *netops) pathIdentity(conn net.Conn, dstIP net.IP, port int) (net.IP, string) {
 	var src net.IP
 	if conn != nil {
 		if la, ok := conn.LocalAddr().(*net.TCPAddr); ok {
 			src = la.IP
 		}
 	} else if dstIP != nil {
-		if c, err := net.Dial("udp4", net.JoinHostPort(dstIP.String(), strconv.Itoa(port))); err == nil {
+		if c, err := o.dial("udp4", net.JoinHostPort(dstIP.String(), strconv.Itoa(port))); err == nil {
 			if la, ok := c.LocalAddr().(*net.UDPAddr); ok {
 				src = la.IP
 			}
@@ -412,20 +441,20 @@ func pathIdentity(conn net.Conn, dstIP net.IP, port int) (net.IP, string) {
 	if src == nil {
 		return nil, ""
 	}
-	return src, ifaceForIP(src)
+	return src, o.ifaceForIP(src)
 }
 
 // ifaceForIP maps a source IP back to an interface name. LocalAddr gives an IP,
 // not a name, so ambiguity (same IP on >1 iface) and no-match are explicit
 // states, not a guess.
-func ifaceForIP(ip net.IP) string {
-	ifaces, err := net.Interfaces()
+func (o *netops) ifaceForIP(ip net.IP) string {
+	ifaces, err := o.interfaces()
 	if err != nil {
 		return ""
 	}
 	name, count := "", 0
 	for _, ifi := range ifaces {
-		addrs, err := ifi.Addrs()
+		addrs, err := o.interfaceAddrs(&ifi)
 		if err != nil {
 			continue
 		}
