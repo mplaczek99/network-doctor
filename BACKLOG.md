@@ -25,9 +25,10 @@ then diagnostic quality, usability, and maintenance.
    calling it and exiting. Reject extra positional arguments instead of
    silently ignoring everything after `flag.Arg(0)`.
 
-5. **Add direct probe regression tests.** Cover cancellation, DNS errors, HTTP
+5. **Add direct probe regression tests.** FIXED Cover cancellation, DNS errors, HTTP
    header limits, TLS failures, banner timeouts, malformed dependency results,
-   and the 16-address attempt cap.
+   and the 16-address attempt cap. See
+   `internal/diagnostic/checks_probe_test.go`.
 
 ## Priority 2 — Diagnostic Quality
 
