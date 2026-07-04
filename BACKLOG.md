@@ -5,7 +5,7 @@ then diagnostic quality, usability, and maintenance.
 
 ## Priority 1 — Correctness and Reliability
 
-1. **Make probes dependency-injectable.** Replace direct calls to networking and
+1. **Make probes dependency-injectable.** FIXED Replace direct calls to networking and
    operating-system functions with small interfaces or function fields. This
    will allow deterministic testing of dialing, DNS, interfaces, and HTTP
    without real network access. Start in `internal/diagnostic/checks.go`.
@@ -73,7 +73,7 @@ then diagnostic quality, usability, and maintenance.
 
 ## Maintenance
 
-16. **Repair the roadmap documentation.** `README.md` links to a nonexistent
+16. **Repair the roadmap documentation.** FIXED `README.md` links to a nonexistent
     `PLAN.md`. Either create and maintain that plan or replace the link with this
     backlog.
 
