@@ -36,9 +36,13 @@ then diagnostic quality, usability, and maintenance.
    as high latency, ambiguous interfaces, direct egress blocked while another
    path works, missing service banners, and partial address failures.
 
-7. **Add proxy-aware diagnosis.** The native probes deliberately disable
+7. **Add proxy-aware diagnosis.** FIXED The native probes deliberately disable
    proxies, which can make a functioning corporate or proxy-only network appear
    offline. Report direct and environment-proxy connectivity separately.
+   Implemented as the `Internet (env proxy)` probe: a `CONNECT` tunnel request
+   through the `HTTPS_PROXY`/`HTTP_PROXY` proxy (N/A when unset), with
+   proxy-aware verdicts and egress downgrading. Env-var proxies only — PAC
+   files and SOCKS are not detected.
 
 8. **Add IPv6 and Happy Eyeballs support.** Targets and resolution are currently
    IPv4-only. Diagnose IPv4 and IPv6 independently and race suitable addresses

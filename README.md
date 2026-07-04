@@ -20,6 +20,7 @@ Network Doctor  github.com:443  ·  Wi-Fi: HomeNet
 Checks                        Details — DNS github.com
 ✓ › Interface                 FAIL — no A records
 ✓   Internet (TCP egress)
+–   Internet (env proxy)
 ✗   DNS github.com
 ⊘   TCP github.com:443
 ⊘   TLS github.com
@@ -38,6 +39,10 @@ failure never hides a working one:
 
 - **Direct-egress path** (independent of DNS): `Interface → Internet (TCP
   egress)`. Always runs, so "DNS is down but the internet is up" is diagnosable.
+- **Proxy-egress path** (independent of both): `Interface → Internet (env
+  proxy)`. The native probes deliberately bypass proxies, so this row reports
+  the environment-configured proxy separately — a proxy-only corporate network
+  reads as "online via proxy" instead of offline.
 - **Plain HTTP path**: `Interface → DNS → HTTP :80`.
 - **Selected target path**: `Interface → DNS → TCP → TLS → HTTPS` for secure
   web targets, or the applicable protocol row for other ports.
@@ -49,6 +54,7 @@ prerequisite failed), or **– N/A** (doesn't apply — e.g. DNS on an IP litera
 |-------|-------------|-------|
 | **Interface** | A non-loopback interface is up and running | |
 | **Internet (TCP egress)** | A TCP connect to `1.1.1.1`/`8.8.8.8:443` succeeds | honestly "direct egress" — proxy-only networks can fail this |
+| **Internet (env proxy)** | The `HTTPS_PROXY`/`HTTP_PROXY` proxy grants a `CONNECT` tunnel | N/A when no proxy is configured; honors `NO_PROXY` |
 | **DNS** | The host resolves to an IPv4 (system resolution) | IP-literal targets are N/A; all A records are retained |
 | **TCP** | A TCP connect to the target port succeeds | tries each A record, pins the first that connects |
 | **TLS** | The TLS handshake (SNI + cert verification) succeeds | bad/expired cert, clock skew, or MITM → Fail |

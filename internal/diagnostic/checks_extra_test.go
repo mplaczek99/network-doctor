@@ -3,7 +3,10 @@ package diagnostic
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -53,12 +56,12 @@ func TestJoinIPs(t *testing.T) {
 func TestBuildProbesProtoShapes(t *testing.T) {
 	cases := []struct {
 		target string
-		want   int // iface, internet, dns, target_tcp, + protocol rows
+		want   int // iface, internet, proxy, dns, target_tcp, + protocol rows
 	}{
-		{"http://example.com", 5}, // + http
-		{"host:25", 5},            // + smtp banner
-		{"host:587", 5},           // + smtp banner
-		{"host:9999", 4},          // ProtoNone — stops at target_tcp
+		{"http://example.com", 6}, // + http
+		{"host:25", 6},            // + smtp banner
+		{"host:587", 6},           // + smtp banner
+		{"host:9999", 5},          // ProtoNone — stops at target_tcp
 	}
 	for _, c := range cases {
 		if got := len(BuildProbes(mustTarget(t, c.target))); got != c.want {
@@ -202,8 +205,88 @@ func TestApplyDialWarnings(t *testing.T) {
 	}
 }
 
+// scriptConn plays a canned proxy response and swallows writes; stands in for
+// the wire in the CONNECT probe tests.
+type scriptConn struct {
+	fakeConn
+	r io.Reader
+}
+
+func (c *scriptConn) Read(p []byte) (int, error)    { return c.r.Read(p) }
+func (*scriptConn) Write(p []byte) (int, error)     { return len(p), nil }
+func (*scriptConn) SetReadDeadline(time.Time) error { return nil }
+
+func proxyOps(proxy string, dial func(context.Context, string, string) (net.Conn, error)) *netops {
+	return &netops{
+		proxyFromEnv: func(*http.Request) (*url.URL, error) {
+			if proxy == "" {
+				return nil, nil
+			}
+			return url.Parse(proxy)
+		},
+		dialContext: dial,
+	}
+}
+
+func TestProxyProbeNoProxyIsNA(t *testing.T) {
+	r := proxyOps("", nil).proxyProbe(context.Background(), nil)
+	if r.Status != StatusNA || !strings.Contains(r.Detail, "no proxy") {
+		t.Errorf("no env proxy = %+v, want N/A", r)
+	}
+}
+
+func TestProxyProbeUnreachable(t *testing.T) {
+	var dialed string
+	ops := proxyOps("http://proxy.corp", func(_ context.Context, _, addr string) (net.Conn, error) {
+		dialed = addr
+		return nil, errors.New("connection refused")
+	})
+	r := ops.proxyProbe(context.Background(), nil)
+	if r.Status != StatusFail || !strings.Contains(r.Detail, "cannot reach proxy") {
+		t.Errorf("unreachable proxy = %+v, want FAIL", r)
+	}
+	if dialed != "proxy.corp:80" {
+		t.Errorf("dialed %q, want proxy.corp:80 (default http port)", dialed)
+	}
+}
+
+func TestProxyProbeConnectOK(t *testing.T) {
+	ops := proxyOps("http://proxy.corp:3128", func(context.Context, string, string) (net.Conn, error) {
+		return &scriptConn{r: strings.NewReader("HTTP/1.1 200 Connection established\r\n\r\n")}, nil
+	})
+	r := ops.proxyProbe(context.Background(), nil)
+	if r.Status != StatusPass || !strings.Contains(r.Detail, "proxy proxy.corp:3128 tunnels") {
+		t.Errorf("granted CONNECT = %+v, want PASS", r)
+	}
+}
+
+func TestProxyProbeAuthRequired(t *testing.T) {
+	ops := proxyOps("http://proxy.corp:3128", func(context.Context, string, string) (net.Conn, error) {
+		return &scriptConn{r: strings.NewReader("HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n")}, nil
+	})
+	r := ops.proxyProbe(context.Background(), nil)
+	if r.Status != StatusFail || !strings.Contains(r.Fix, "credentials") {
+		t.Errorf("407 from proxy = %+v, want FAIL with credentials fix", r)
+	}
+}
+
+// HTTP_PROXY-only environments (no HTTPS_PROXY) still count as configured.
+func TestEnvProxyURLFallsBackToHTTP(t *testing.T) {
+	ops := &netops{proxyFromEnv: func(req *http.Request) (*url.URL, error) {
+		if req.URL.Scheme == "http" {
+			return url.Parse("http://proxy:8080")
+		}
+		return nil, nil
+	}}
+	u, err := ops.envProxyURL()
+	if err != nil || u == nil || u.Host != "proxy:8080" {
+		t.Errorf("envProxyURL = (%v, %v), want the http-scheme proxy", u, err)
+	}
+}
+
 // DowngradeEgress turns a direct-egress FAIL into WARN only when another path
-// proved the network works: target TCP when a target exists, else DNS.
+// proved the network works: target TCP when a target exists, the environment
+// proxy, or else DNS.
 func TestDowngradeEgress(t *testing.T) {
 	cases := []struct {
 		name string
@@ -225,6 +308,15 @@ func TestDowngradeEgress(t *testing.T) {
 		{"egress passing untouched", map[ProbeID]ProbeResult{
 			ProbeInternet: {Status: StatusPass}, ProbeDNS: {Status: StatusPass},
 		}, StatusPass},
+		{"proxy path saves generic", map[ProbeID]ProbeResult{
+			ProbeInternet: {Status: StatusFail}, ProbeDNS: {Status: StatusFail}, ProbeProxy: {Status: StatusPass},
+		}, StatusWarn},
+		{"proxy path saves target", map[ProbeID]ProbeResult{
+			ProbeInternet: {Status: StatusFail}, ProbeDNS: {Status: StatusPass}, ProbeTargetTCP: {Status: StatusFail}, ProbeProxy: {Status: StatusPass},
+		}, StatusWarn},
+		{"proxy NA not enough", map[ProbeID]ProbeResult{
+			ProbeInternet: {Status: StatusFail}, ProbeDNS: {Status: StatusFail}, ProbeProxy: {Status: StatusNA},
+		}, StatusFail},
 	}
 	for _, c := range cases {
 		DowngradeEgress(c.res)

@@ -31,6 +31,49 @@ func TestDiagnoseGeneric(t *testing.T) {
 	}
 }
 
+// Direct and proxied egress are diagnosed separately: a proxy-only network
+// reads as online-via-proxy, and a dead configured proxy is called out even
+// when direct connectivity works.
+func TestDiagnoseProxy(t *testing.T) {
+	order := []ProbeID{ProbeIface, ProbeInternet, ProbeProxy, ProbeDNS}
+	cases := []struct {
+		name                 string
+		internet, proxy, dns Status
+		want                 string
+	}{
+		// internet is Warn, not Fail: DowngradeEgress has already run.
+		{"proxy-only network", StatusWarn, StatusPass, StatusPass, "Online via the environment proxy"},
+		{"proxy dead, direct fine", StatusPass, StatusFail, StatusPass, "proxy is unreachable"},
+		{"no proxy configured", StatusPass, StatusNA, StatusPass, "Online — direct TCP egress"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			res := map[ProbeID]ProbeResult{
+				ProbeIface:    {Status: StatusPass},
+				ProbeInternet: {Status: c.internet},
+				ProbeProxy:    {Status: c.proxy},
+				ProbeDNS:      {Status: c.dns},
+			}
+			if v := Diagnose(nil, order, res); !strings.Contains(v, c.want) {
+				t.Errorf("got %q, want substring %q", v, c.want)
+			}
+		})
+	}
+}
+
+func TestDiagnoseTargetProxyOnly(t *testing.T) {
+	tg := mustTarget(t, "host:9999")
+	order := []ProbeID{ProbeIface, ProbeInternet, ProbeProxy, ProbeDNS, ProbeTargetTCP}
+	res := map[ProbeID]ProbeResult{
+		ProbeIface: {Status: StatusPass}, ProbeInternet: {Status: StatusFail},
+		ProbeProxy: {Status: StatusPass}, ProbeDNS: {Status: StatusPass},
+		ProbeTargetTCP: {Status: StatusFail},
+	}
+	if v := Diagnose(tg, order, res); !strings.Contains(v, "proxy-only network") {
+		t.Errorf("got %q, want a proxy-only verdict", v)
+	}
+}
+
 func TestDiagnoseIncomplete(t *testing.T) {
 	order := []ProbeID{ProbeIface, ProbeInternet, ProbeDNS}
 	res := map[ProbeID]ProbeResult{ProbeIface: {Status: StatusPass}}

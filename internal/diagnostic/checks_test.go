@@ -16,14 +16,14 @@ func mustTarget(t *testing.T, s string) *Target {
 }
 
 func TestBuildProbesShape(t *testing.T) {
-	if got := len(BuildProbes(nil)); got != 3 {
-		t.Errorf("generic probes = %d, want 3", got)
+	if got := len(BuildProbes(nil)); got != 4 {
+		t.Errorf("generic probes = %d, want 4", got)
 	}
-	if got := len(BuildProbes(mustTarget(t, "github.com"))); got != 7 {
-		t.Errorf("https target probes = %d, want 7", got)
+	if got := len(BuildProbes(mustTarget(t, "github.com"))); got != 8 {
+		t.Errorf("https target probes = %d, want 8", got)
 	}
-	if got := len(BuildProbes(mustTarget(t, "host:22"))); got != 5 {
-		t.Errorf("ssh target probes = %d, want 5", got)
+	if got := len(BuildProbes(mustTarget(t, "host:22"))); got != 6 {
+		t.Errorf("ssh target probes = %d, want 6", got)
 	}
 }
 

@@ -6,10 +6,12 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strconv"
 	"strings"
@@ -64,6 +66,7 @@ type ProbeID string
 const (
 	ProbeIface     ProbeID = "iface"
 	ProbeInternet  ProbeID = "internet_tcp"
+	ProbeProxy     ProbeID = "proxy_connect"
 	ProbeDNS       ProbeID = "dns"
 	ProbeTargetTCP ProbeID = "target_tcp"
 	ProbeTLS       ProbeID = "tls"
@@ -128,6 +131,7 @@ type netops struct {
 	dialTLS        func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error)
 	ssid           func(ctx context.Context, iface string) string
 	defaultRoute   func(ctx context.Context) (string, bool, error)
+	proxyFromEnv   func(*http.Request) (*url.URL, error)
 }
 
 var defaultOps = &netops{
@@ -143,6 +147,7 @@ var defaultOps = &netops{
 	},
 	ssid:         ssid,
 	defaultRoute: defaultRoute,
+	proxyFromEnv: http.ProxyFromEnvironment,
 }
 
 // BuildProbes constructs the DAG for the given target (nil = generic mode).
@@ -151,18 +156,22 @@ func BuildProbes(t *Target) []Probe { return defaultOps.buildProbes(t) }
 func (o *netops) buildProbes(t *Target) []Probe {
 	iface := Probe{ID: ProbeIface, Name: "Interface", Run: o.ifaceProbe}
 	internet := Probe{ID: ProbeInternet, Name: "Internet (TCP egress)", Deps: []ProbeID{ProbeIface}, Run: o.internetProbe}
+	// Direct and proxied egress are reported separately: the native probes
+	// deliberately bypass proxies, so on a proxy-only network the direct row
+	// fails while this row proves the environment proxy carries traffic.
+	proxy := Probe{ID: ProbeProxy, Name: "Internet (env proxy)", Deps: []ProbeID{ProbeIface}, Run: o.proxyProbe}
 
 	if t == nil {
-		// Egress and DNS are siblings: each depends only on the interface, so an
-		// egress failure never hides a DNS failure (or vice-versa).
+		// Egress, proxy egress, and DNS are siblings: each depends only on the
+		// interface, so one failure never hides another.
 		dns := Probe{ID: ProbeDNS, Name: "DNS", Deps: []ProbeID{ProbeIface}, Run: o.dnsProbe(probeHost, false, nil)}
-		return []Probe{iface, internet, dns}
+		return []Probe{iface, internet, proxy, dns}
 	}
 
 	host, port := t.Host, t.Port
 	dns := Probe{ID: ProbeDNS, Name: "DNS " + host, Deps: []ProbeID{ProbeIface}, Run: o.dnsProbe(host, t.IsLiteral, t.IP)}
 	ttcp := Probe{ID: ProbeTargetTCP, Name: fmt.Sprintf("TCP %s:%d", host, port), Deps: []ProbeID{ProbeDNS}, Run: o.targetTCPProbe(port)}
-	probes := []Probe{iface, internet, dns, ttcp}
+	probes := []Probe{iface, internet, proxy, dns, ttcp}
 
 	switch t.Proto {
 	case ProtoTLSHTTP:
@@ -227,6 +236,96 @@ func (o *netops) internetProbe(ctx context.Context, _ map[ProbeID]ProbeResult) P
 	r.Status, r.Source, r.Iface = StatusFail, src, iface
 	r.Detail = "no direct TCP egress to 1.1.1.1/8.8.8.8:443"
 	r.Fix = "no internet egress — proxy-only/filtered network? check upstream"
+	return r
+}
+
+// envProxyURL returns the proxy the environment configures for outbound
+// HTTPS (falling back to plain HTTP), or nil when none applies. NO_PROXY and
+// lowercase variants are honored via the stdlib rules.
+func (o *netops) envProxyURL() (*url.URL, error) {
+	for _, scheme := range []string{"https", "http"} {
+		u, err := o.proxyFromEnv(&http.Request{URL: &url.URL{Scheme: scheme, Host: probeHost}})
+		if err != nil || u != nil {
+			return u, err
+		}
+	}
+	return nil, nil
+}
+
+// proxyProbe checks egress through the environment-configured proxy: dial the
+// proxy and ask for a CONNECT tunnel to probeHost:443. This is exactly what
+// proxied HTTPS clients do, minus the TLS handshake inside the tunnel.
+func (o *netops) proxyProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
+	r := ProbeResult{ID: ProbeProxy}
+	proxyURL, err := o.envProxyURL()
+	if err != nil {
+		r.Status = StatusFail
+		r.Detail = "bad proxy configuration: " + textsafe.Clean(err.Error())
+		r.Fix = "fix the HTTPS_PROXY/HTTP_PROXY value"
+		return r
+	}
+	if proxyURL == nil {
+		r.Status = StatusNA
+		r.Detail = "no proxy in environment (HTTPS_PROXY/HTTP_PROXY unset)"
+		return r
+	}
+	addr := proxyURL.Host
+	if proxyURL.Port() == "" {
+		port := "80"
+		if proxyURL.Scheme == "https" {
+			port = "443"
+		}
+		addr = net.JoinHostPort(proxyURL.Hostname(), port)
+	}
+	start := time.Now()
+	var conn net.Conn
+	if proxyURL.Scheme == "https" {
+		conn, err = o.dialTLS(ctx, "tcp4", addr, &tls.Config{ServerName: proxyURL.Hostname()})
+	} else {
+		conn, err = o.dialContext(ctx, "tcp4", addr)
+	}
+	if err != nil {
+		r.Status = StatusFail
+		r.Detail = "cannot reach proxy " + textsafe.Clean(addr) + ": " + textsafe.Clean(err.Error())
+		r.Fix = "proxy configured but unreachable — check HTTPS_PROXY/HTTP_PROXY and the proxy host"
+		return r
+	}
+	defer conn.Close()
+	req := "CONNECT " + probeHost + ":443 HTTP/1.1\r\nHost: " + probeHost + ":443\r\n"
+	if u := proxyURL.User; u != nil {
+		pw, _ := u.Password()
+		req += "Proxy-Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(u.Username()+":"+pw)) + "\r\n"
+	}
+	if _, err := io.WriteString(conn, req+"\r\n"); err != nil {
+		r.Status = StatusFail
+		r.Detail = "proxy write failed: " + textsafe.Clean(err.Error())
+		return r
+	}
+	conn.SetReadDeadline(time.Now().Add(remaining(ctx)))
+	// Bounded read: the response is attacker-controlled.
+	resp, err := http.ReadResponse(bufio.NewReader(io.LimitReader(conn, 4096)), &http.Request{Method: http.MethodConnect})
+	if err != nil {
+		r.Status = StatusFail
+		r.Detail = "no CONNECT response from proxy " + textsafe.Clean(addr) + ": " + textsafe.Clean(err.Error())
+		r.Fix = "proxy reachable but not speaking HTTP — wrong port or scheme?"
+		return r
+	}
+	resp.Body.Close()
+	rtt := time.Since(start)
+	if resp.StatusCode/100 != 2 {
+		r.Status = StatusFail
+		r.Detail = "proxy " + textsafe.Clean(addr) + " refused CONNECT: " + textsafe.Clean(resp.Status)
+		if resp.StatusCode == http.StatusProxyAuthRequired {
+			r.Fix = "proxy requires credentials — set user:pass@host in HTTPS_PROXY"
+		} else {
+			r.Fix = "proxy reachable but refusing tunnels — check proxy policy"
+		}
+		return r
+	}
+	src, iface := o.pathIdentity(ctx, conn, nil, 0)
+	r.Status, r.Source, r.Iface = StatusPass, src, iface
+	r.Detail = fmt.Sprintf("proxy %s tunnels to %s:443 in %dms", addr, probeHost, rtt.Milliseconds())
+	applyDialWarnings(&r, rtt)
 	return r
 }
 

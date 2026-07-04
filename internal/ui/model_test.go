@@ -138,7 +138,7 @@ func TestScheduleStartsRoot(t *testing.T) {
 }
 
 func TestSelectionClamp(t *testing.T) {
-	m := newModel(nil) // 3 rows
+	m := newModel(nil) // 4 rows
 	u, _ := m.Update(keyMsg("k"))
 	if asModel(t, u).selected != 0 {
 		t.Error("up at top must stay 0")
@@ -147,8 +147,8 @@ func TestSelectionClamp(t *testing.T) {
 		u, _ = m.Update(keyMsg("j"))
 		m = asModel(t, u)
 	}
-	if m.selected != 2 {
-		t.Errorf("selected = %d, want clamp at 2", m.selected)
+	if m.selected != 3 {
+		t.Errorf("selected = %d, want clamp at 3", m.selected)
 	}
 }
 

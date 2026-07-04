@@ -16,18 +16,18 @@ func mustTarget(t *testing.T, s string) *diagnostic.Target {
 	return target
 }
 
-// Generic mode: egress and DNS are siblings — an egress failure must not skip
-// DNS, so DNS-down-but-internet-up remains diagnosable.
+// Generic mode: egress, proxy egress, and DNS are siblings — an egress
+// failure must not skip DNS, so DNS-down-but-internet-up remains diagnosable.
 func TestSiblingIndependence(t *testing.T) {
 	m := newModel(nil)
 	m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{ID: diagnostic.ProbeIface, Status: diagnostic.StatusPass}
 	m.started[diagnostic.ProbeIface] = true
 	cmds := m.scheduleStep()
-	if len(cmds) != 2 {
-		t.Fatalf("want 2 dispatched (internet, dns), got %d", len(cmds))
+	if len(cmds) != 3 {
+		t.Fatalf("want 3 dispatched (internet, proxy, dns), got %d", len(cmds))
 	}
-	if !m.started[diagnostic.ProbeInternet] || !m.started[diagnostic.ProbeDNS] {
-		t.Fatal("internet+dns should both be dispatched")
+	if !m.started[diagnostic.ProbeInternet] || !m.started[diagnostic.ProbeProxy] || !m.started[diagnostic.ProbeDNS] {
+		t.Fatal("internet+proxy+dns should all be dispatched")
 	}
 	if _, ok := m.results[diagnostic.ProbeDNS]; ok {
 		t.Error("dns must be dispatched, not skipped by an egress failure")
