@@ -61,9 +61,17 @@ then diagnostic quality, usability, and maintenance.
    else keeps `curl`. The curl fact extractor requires the exact `-w` output
    shape so ssh/s_client output sharing the hotkey never mis-parses.
 
-10. **Parse `mtr` and `pathping` output.** Produce a route-quality result showing
-    packet loss, latency spikes, and the first suspicious hop while retaining
-    the raw output as evidence.
+10. **Parse `mtr` and `pathping` output.** FIXED Produce a route-quality result
+    showing packet loss, latency spikes, and the first suspicious hop while
+    retaining the raw output as evidence. Both tools share the `m` hotkey, so
+    the fact extractor parses `mtr --report` rows (unix) and pathping
+    statistics rows (Windows, English-locale only like ping) into common hops
+    and emits `dest_loss`, `worst_hop`, `latency_spike` (≥50 ms avg-RTT jump),
+    and `suspect_hop`. Suspicion follows mtr-reading rules: intermediate loss
+    that clears by the destination is ICMP deprioritization and is ignored; a
+    trailing run of silent hops blames the run's first hop; destination loss
+    blames the first hop where loss appears. The raw sanitized output remains
+    the authoritative evidence.
 
 ## Priority 3 — Usability and Automation
 

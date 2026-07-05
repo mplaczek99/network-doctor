@@ -211,6 +211,92 @@ func TestExtractDig(t *testing.T) {
 	}
 }
 
+func TestExtractMtr(t *testing.T) {
+	stdout := []string{
+		"Start: 2026-07-04T10:00:00+0000",
+		"HOST: box                        Loss%   Snt   Last   Avg  Best  Wrst StDev",
+		"  1.|-- 192.168.1.1               0.0%     5    1.2   1.3   1.1   1.5   0.2",
+		"  2.|-- 10.0.0.1                 20.0%     5    8.4   9.1   8.0  10.2   0.9",
+		"  3.|-- ???                      100.0     5    0.0   0.0   0.0   0.0   0.0",
+		"  4.|-- 203.0.113.9              20.0%     5   25.3  160.1  24.9 180.5  70.1",
+	}
+	facts := extractFacts("m", "linux", stdout)
+	for key, want := range map[string]string{
+		"dest_loss":     "20%",
+		"worst_hop":     "20% loss at hop 2 (10.0.0.1)",
+		"latency_spike": "+151ms at hop 4 (203.0.113.9)",
+		"suspect_hop":   "hop 2 (10.0.0.1): 20% loss persisting to destination",
+	} {
+		if v, ok := factVal(facts, key); !ok || v != want {
+			t.Errorf("%s = %q (%v), want %q", key, v, ok, want)
+		}
+	}
+}
+
+// A clean route yields only dest_loss; a silent middle hop with a healthy
+// destination is ICMP deprioritization, never a suspect.
+func TestExtractMtrClean(t *testing.T) {
+	stdout := []string{
+		"HOST: box                        Loss%   Snt   Last   Avg  Best  Wrst StDev",
+		"  1.|-- 192.168.1.1               0.0%     5    1.2   1.3   1.1   1.5   0.2",
+		"  2.|-- ???                      100.0     5    0.0   0.0   0.0   0.0   0.0",
+		"  3.|-- 93.184.216.34             0.0%     5    9.0   9.1   8.0  10.2   0.9",
+	}
+	facts := extractFacts("m", "linux", stdout)
+	if v, ok := factVal(facts, "dest_loss"); !ok || v != "0%" {
+		t.Errorf("dest_loss = %q (%v), want 0%%", v, ok)
+	}
+	if len(facts) != 1 {
+		t.Errorf("facts = %v, want dest_loss only", facts)
+	}
+}
+
+// A trailing run of silent hops means the path dies at the run's first hop.
+func TestExtractMtrDeadTail(t *testing.T) {
+	stdout := []string{
+		"  1.|-- 192.168.1.1               0.0%     5    1.2   1.3   1.1   1.5   0.2",
+		"  2.|-- 10.0.0.1                  0.0%     5    8.4   9.1   8.0  10.2   0.9",
+		"  3.|-- ???                      100.0     5    0.0   0.0   0.0   0.0   0.0",
+		"  4.|-- ???                      100.0     5    0.0   0.0   0.0   0.0   0.0",
+	}
+	facts := extractFacts("m", "linux", stdout)
+	if v, ok := factVal(facts, "dest_loss"); !ok || v != "100%" {
+		t.Errorf("dest_loss = %q (%v), want 100%%", v, ok)
+	}
+	want := "hop 3 (???): no replies from here to destination"
+	if v, ok := factVal(facts, "suspect_hop"); !ok || v != want {
+		t.Errorf("suspect_hop = %q (%v), want %q", v, ok, want)
+	}
+}
+
+func TestExtractPathping(t *testing.T) {
+	stdout := []string{
+		"Tracing route to example.com [93.184.216.34]",
+		"over a maximum of 30 hops:",
+		"Computing statistics for 125 seconds...",
+		"            Source to Here   This Node/Link",
+		"Hop  RTT    Lost/Sent = Pct  Lost/Sent = Pct  Address",
+		"  0                                           box [192.168.1.2]",
+		"                                0/ 100 =  0%   |",
+		"  1    1ms     0/ 100 =  0%     0/ 100 =  0%  192.168.1.1",
+		"                               10/ 100 = 10%   |",
+		"  2   ---     100/ 100 =100%     0/ 100 =  0%  10.0.0.1",
+		"  3   82ms    15/ 100 = 15%    15/ 100 = 15%  203.0.113.9",
+		"Trace complete.",
+	}
+	facts := extractFacts("m", "windows", stdout)
+	for key, want := range map[string]string{
+		"dest_loss":     "15%",
+		"worst_hop":     "15% loss at hop 3 (203.0.113.9)",
+		"latency_spike": "+81ms at hop 3 (203.0.113.9)",
+		"suspect_hop":   "hop 3 (203.0.113.9): 15% loss persisting to destination",
+	} {
+		if v, ok := factVal(facts, key); !ok || v != want {
+			t.Errorf("%s = %q (%v), want %q", key, v, ok, want)
+		}
+	}
+}
+
 func TestShellArgsQuotes(t *testing.T) {
 	got := shellArgs([]string{"-w", `%{http_code}\n`, "https://x"})
 	want := `-w '%{http_code}\n' https://x`

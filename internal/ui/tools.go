@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"os/exec"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -275,6 +277,11 @@ func extractFacts(toolKey, goos string, stdout []string) []Fact {
 		if len(as) > 0 {
 			facts = append(facts, Fact{"A_records", strings.Join(as, ", ")})
 		}
+	case "m":
+		if goos == "windows" {
+			return routeFacts(pathpingHops(stdout))
+		}
+		return routeFacts(mtrHops(stdout))
 	}
 	return facts
 }
@@ -321,4 +328,146 @@ func nslookupFacts(stdout []string) []Fact {
 		return nil
 	}
 	return []Fact{{"A_records", strings.Join(as, ", ")}}
+}
+
+// routeHop is one parsed hop from mtr --report or pathping statistics.
+type routeHop struct {
+	n    int
+	host string
+	loss float64 // percent
+	avg  float64 // avg (mtr) or per-hop (pathping) RTT in ms; -1 = no data
+}
+
+// ponytail: fixed thresholds — 10% loss is suspicious, a 50ms avg-RTT jump is
+// a spike; make them per-tool knobs only if real routes prove them wrong.
+const routeLossMin, routeSpikeMin = 10.0, 50.0
+
+// mtrHopRE matches report rows like
+// "  2.|-- 10.0.0.1  20.0%  5  8.4  9.1  8.0  10.2  0.9"
+// (hop, host, Loss%, Snt, Last, Avg, ...). The % is optional: some builds
+// print unresponsive hops as "100.0" without it.
+var mtrHopRE = regexp.MustCompile(`^\s*(\d+)\.\|--\s+(\S+)\s+([\d.]+)%?\s+\d+\s+[\d.]+\s+([\d.]+)`)
+
+func mtrHops(stdout []string) []routeHop {
+	var hops []routeHop
+	for _, ln := range stdout {
+		m := mtrHopRE.FindStringSubmatch(ln)
+		if m == nil {
+			continue
+		}
+		n, _ := strconv.Atoi(m[1])
+		loss, _ := strconv.ParseFloat(m[3], 64)
+		avg, _ := strconv.ParseFloat(m[4], 64)
+		if loss >= 100 {
+			avg = -1 // all probes lost; the 0.0 timings are meaningless
+		}
+		hops = append(hops, routeHop{n, m[2], loss, avg})
+	}
+	return hops
+}
+
+// pathpingHopRE matches statistics rows like
+// "  2   8ms   10/ 100 = 10%   5/ 100 =  5%  10.0.0.1"
+// (hop, RTT or ---, source-to-here loss, this-node loss, address). The hop's
+// own loss is the second percentage; the source-to-here column accumulates
+// upstream loss. Link-loss "|" rows and the hop-0 header row don't match.
+// English-locale output only, same documented limitation as Windows ping.
+var pathpingHopRE = regexp.MustCompile(`^\s*(\d+)\s+(?:(\d+)ms|---)\s+\d+/\s*\d+\s*=\s*(\d+)%\s+\d+/\s*\d+\s*=\s*(\d+)%\s+(\S.*)$`)
+
+func pathpingHops(stdout []string) []routeHop {
+	var hops []routeHop
+	for _, ln := range stdout {
+		m := pathpingHopRE.FindStringSubmatch(ln)
+		if m == nil {
+			continue
+		}
+		n, _ := strconv.Atoi(m[1])
+		loss, _ := strconv.ParseFloat(m[4], 64)
+		avg := -1.0
+		if m[2] != "" {
+			avg, _ = strconv.ParseFloat(m[2], 64)
+		}
+		hops = append(hops, routeHop{n, strings.TrimSpace(m[5]), loss, avg})
+	}
+	return hops
+}
+
+// routeFacts summarizes route quality from parsed hops: destination loss, the
+// lossiest hop, the biggest latency jump, and the first suspicious hop. Loss
+// at an intermediate hop that clears by the destination is ICMP
+// deprioritization, not path loss, so suspicion needs loss that persists to
+// the destination, a trailing run of silent hops, or a latency spike.
+func routeFacts(hops []routeHop) []Fact {
+	if len(hops) == 0 {
+		return nil
+	}
+	dest := hops[len(hops)-1]
+	facts := []Fact{{"dest_loss", routePct(dest.loss)}}
+
+	// Lossiest hop, ignoring silent (100%) hops: routers that answer no
+	// probes at all are noise unless the path dies there, which suspect_hop
+	// reports.
+	worst := routeHop{loss: -1}
+	for _, h := range hops {
+		if h.loss < 100 && h.loss > worst.loss {
+			worst = h
+		}
+	}
+	if worst.loss > 0 {
+		facts = append(facts, Fact{"worst_hop",
+			fmt.Sprintf("%s loss at hop %d (%s)", routePct(worst.loss), worst.n, worst.host)})
+	}
+
+	var spikeHop routeHop
+	spike, prev := 0.0, -1.0
+	for _, h := range hops {
+		if h.avg < 0 {
+			continue
+		}
+		if prev >= 0 && h.avg-prev > spike {
+			spike, spikeHop = h.avg-prev, h
+		}
+		prev = h.avg
+	}
+	if spike >= routeSpikeMin {
+		facts = append(facts, Fact{"latency_spike",
+			fmt.Sprintf("+%.0fms at hop %d (%s)", spike, spikeHop.n, spikeHop.host)})
+	}
+
+	if h, why := routeSuspect(hops, spike, spikeHop); why != "" {
+		facts = append(facts, Fact{"suspect_hop",
+			fmt.Sprintf("hop %d (%s): %s", h.n, h.host, why)})
+	}
+	return facts
+}
+
+// routeSuspect picks the first hop where trouble starts, or a zero hop and ""
+// when the route looks healthy.
+func routeSuspect(hops []routeHop, spike float64, spikeHop routeHop) (routeHop, string) {
+	dest := hops[len(hops)-1]
+	if dest.loss >= 100 {
+		i := len(hops) - 1
+		for i > 0 && hops[i-1].loss >= 100 {
+			i--
+		}
+		return hops[i], "no replies from here to destination"
+	}
+	if dest.loss >= routeLossMin {
+		// ponytail: naive origin pick — first hop with real loss; a
+		// rate-limited hop upstream of the true origin can win the blame.
+		for _, h := range hops {
+			if h.loss >= routeLossMin && h.loss < 100 {
+				return h, fmt.Sprintf("%s loss persisting to destination", routePct(h.loss))
+			}
+		}
+	}
+	if spike >= routeSpikeMin {
+		return spikeHop, fmt.Sprintf("latency jumps +%.0fms", spike)
+	}
+	return routeHop{}, ""
+}
+
+// routePct renders a loss percentage without trailing zeros ("20%", "0.5%").
+func routePct(v float64) string {
+	return strconv.FormatFloat(v, 'f', -1, 64) + "%"
 }
