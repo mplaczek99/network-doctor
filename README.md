@@ -108,6 +108,7 @@ network-doctor                  # generic local + internet diagnosis
 network-doctor github.com       # diagnose the path to a host (→ HTTP + TLS + HTTPS)
 network-doctor github.com:22    # port selects the protocol rows (→ SSH banner)
 network-doctor https://host:80  # explicit scheme selects the protocol (→ TLS + HTTPS on :80)
+network-doctor --json host      # headless: one JSON report on stdout (scripts, CI, bug reports)
 ```
 
 The target parser has two independent axes: the **port** (explicit `:port` >
@@ -172,6 +173,29 @@ cmd.exe paste is not supported).
 `--toolbox [<host>]` opens straight into the toolbox without auto-running the
 chain (press `r` to run it). With no host, only the target-independent tools are
 offered.
+
+### JSON output
+
+`--json` runs the same probe DAG headless — no TUI — and prints one JSON
+document to stdout:
+
+```json
+{
+  "version": "1.2.3",
+  "target": {"host": "github.com", "port": 443, "protocol": "tls+http"},
+  "checks": [
+    {"id": "dns", "name": "DNS github.com", "status": "PASS", "detail": "github.com → 140.82.113.3", "addrs": ["140.82.113.3"]}
+  ],
+  "summary": "All checks passed — github.com:443 looks healthy.",
+  "ok": true
+}
+```
+
+`status` is one of `PASS`, `WARN`, `FAIL`, `SKIP`, `N/A`. `target` is `null`
+in generic (no-target) mode. Optional per-check fields (`fix`, `addrs`,
+`selected_ip`, `source`, `iface`, `network`, `attempts`) are omitted when
+empty. Field names and the status vocabulary are stable — safe to script
+against. Exit codes follow the table below (`ok: false` ⇒ exit `1`).
 
 ### Exit codes
 

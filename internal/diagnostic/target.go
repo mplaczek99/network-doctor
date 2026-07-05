@@ -20,6 +20,20 @@ const (
 	ProtoSMTP
 )
 
+func (p Proto) String() string {
+	switch p {
+	case ProtoTLSHTTP:
+		return "tls+http"
+	case ProtoHTTP:
+		return "http"
+	case ProtoSSH:
+		return "ssh"
+	case ProtoSMTP:
+		return "smtp"
+	}
+	return "none"
+}
+
 // Target is the parsed, validated destination. Two independent axes: the
 // endpoint Port (explicit > scheme default > 443) and the Proto of the
 // protocol rows (explicit scheme wins; else inferred from the effective port).
