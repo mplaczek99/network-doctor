@@ -59,7 +59,7 @@ func TestToolBuildCurlScheme(t *testing.T) {
 	}{
 		{"http://example.com", "http"},
 		{"https://example.com", "https"},
-		{"example.com:22", "https"}, // non-http proto defaults to https
+		{"example.com:9999", "https"}, // ProtoNone defaults to https (ssh/smtp targets get their own tool)
 	}
 	for _, c := range cases {
 		target := mustTarget(t, c.target)

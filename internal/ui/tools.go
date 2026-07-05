@@ -78,7 +78,17 @@ func toolsFor(t *diagnostic.Target, goos string) []Tool {
 		tools = append(tools, staticTool(quote, "d", "dig", "dig", "+time=2", "+tries=1", host))
 	}
 
-	tools = append(tools, curlTool(host, goos))
+	// The "c" slot is the application-layer check, matched to the target's
+	// protocol: curl only fits HTTP(S), so SSH and SMTP targets get a bounded
+	// handshake probe instead.
+	switch t.Proto {
+	case diagnostic.ProtoSSH:
+		tools = append(tools, sshTool(quote, host, t.Port, goos))
+	case diagnostic.ProtoSMTP:
+		tools = append(tools, smtpTool(quote, host, t.Port))
+	default:
+		tools = append(tools, curlTool(host, goos))
+	}
 
 	if goos == "windows" {
 		tools = append(tools,
@@ -135,6 +145,36 @@ func curlTool(host, goos string) Tool {
 	}
 }
 
+// sshTool builds a bounded SSH handshake check for the "c" slot: -v prints the
+// server's protocol banner and key exchange on stderr, BatchMode=yes forbids
+// prompts so the run never blocks on input, and a throwaway known-hosts file
+// avoids both host-key prompts and writes to the user's known_hosts. If an
+// agent key does authenticate, the remote command is a bare "exit".
+// ConnectTimeout plus the job timeout bound the run.
+func sshTool(quote func([]string) string, host string, port int, goos string) Tool {
+	knownHosts := "/dev/null"
+	if goos == "windows" {
+		knownHosts = "NUL"
+	}
+	return staticTool(quote, "c", "ssh", "ssh",
+		"-v",
+		"-o", "BatchMode=yes",
+		"-o", "ConnectTimeout=3",
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "UserKnownHostsFile="+knownHosts,
+		"-p", strconv.Itoa(port),
+		host, "exit")
+}
+
+// smtpTool builds a bounded SMTP STARTTLS check for the "c" slot (ProtoSMTP is
+// only inferred for ports 25 and 587, both STARTTLS). In the TUI the process
+// gets an empty stdin, so s_client exits right after the handshake instead of
+// waiting for commands; the job timeout bounds the rest.
+func smtpTool(quote func([]string) string, host string, port int) Tool {
+	return staticTool(quote, "c", "openssl s_client", "openssl",
+		"s_client", "-starttls", "smtp", "-connect", host+":"+strconv.Itoa(port))
+}
+
 // staticTool builds a target-independent Tool whose argv is fixed at construction
 // (a host, if any, is already baked into args). slices.Clone gives each Build call
 // independent slices, matching the per-call allocation of the literals it replaces.
@@ -186,9 +226,13 @@ func extractFacts(toolKey, goos string, stdout []string) []Fact {
 	var facts []Fact
 	switch toolKey {
 	case "c": // curl -w "http_code time_total remote_ip ssl_verify_result"
+		// The "c" hotkey is ssh/s_client on SSH/SMTP targets; require the
+		// curl -w shape (3-digit code, IP in field 3) so their output — e.g.
+		// an SMTP "220 host ESMTP ..." greeting — never mis-parses as facts.
 		for i := len(stdout) - 1; i >= 0; i-- {
 			f := strings.Fields(stdout[i])
-			if len(f) == 4 {
+			if len(f) == 4 && len(f[0]) == 3 &&
+				strings.TrimLeft(f[0], "0123456789") == "" && net.ParseIP(f[2]) != nil {
 				facts = append(facts,
 					Fact{"http_code", f[0]},
 					Fact{"time_total", f[1] + "s"},

@@ -151,8 +151,16 @@ The same hotkeys map to each OS's built-in tools:
 | `p` | `ping -c 4 -W 2` | `ping -c 4` | `ping -n 4 -w 2000` |
 | `d` | `dig +time=2 +tries=1` | `dig +time=2 +tries=1` | `nslookup` |
 | `c` | `curl … -w '…'` (locale-proof facts) | same | `curl.exe` (bypasses the PowerShell 5.1 `curl` alias) |
+| `c` (SSH target) | `ssh -v -o BatchMode=yes …` (bounded banner/handshake check) | same | same |
+| `c` (SMTP target) | `openssl s_client -starttls smtp` | same | same |
 | `t` | `traceroute -w 2 -q 1 -m 20` | same | `tracert -w 2000 -h 20` |
 | `m` | `mtr --report --report-cycles 5` | same (via brew) | `pathping -h 20 -q 5 -p 100 -w 500` (own 90 s budget) |
+
+The `c` slot is protocol-aware: HTTP(S) and unknown-port targets get `curl`,
+while SSH (port 22) and SMTP (ports 25/587) targets get a protocol-appropriate
+handshake probe — never an HTTPS-oriented `curl` line. The SSH check uses a
+throwaway known-hosts file (no prompts, no writes) and runs a bare `exit` if a
+key happens to authenticate.
 
 The routes/sockets tools are target-independent; the rest need a host. Tools are
 run with an argument slice (never a shell string), in their own process group on

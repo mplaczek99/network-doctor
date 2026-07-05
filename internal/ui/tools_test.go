@@ -85,6 +85,81 @@ func TestToolsForDefinitions(t *testing.T) {
 	}
 }
 
+// TestToolsForProtocol pins the protocol-aware "c" slot: SSH and SMTP targets
+// get a bounded handshake probe instead of an HTTPS-oriented curl.
+func TestToolsForProtocol(t *testing.T) {
+	findC := func(tools []Tool) Tool {
+		for _, tool := range tools {
+			if tool.Key == "c" {
+				return tool
+			}
+		}
+		t.Fatal("no tool with key 'c'")
+		return Tool{}
+	}
+
+	ssh := mustTarget(t, "example.com:22")
+	c := findC(toolsFor(ssh, "linux"))
+	if c.Name != "ssh" || c.Bin != "ssh" {
+		t.Fatalf("ssh target c-slot = {Name:%q Bin:%q}, want ssh", c.Name, c.Bin)
+	}
+	args, env, display := c.Build(ssh)
+	wantSSH := []string{
+		"-v", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3",
+		"-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+		"-p", "22", "example.com", "exit",
+	}
+	if !slices.Equal(args, wantSSH) {
+		t.Errorf("ssh argv = %q, want %q", args, wantSSH)
+	}
+	if env != nil {
+		t.Errorf("ssh env = %q, want nil", env)
+	}
+	if display != "ssh "+shellArgs(wantSSH) {
+		t.Errorf("ssh display = %q", display)
+	}
+
+	// Windows: throwaway known-hosts file is NUL, display uses psArgs.
+	cw := findC(toolsFor(ssh, "windows"))
+	argsW, _, _ := cw.Build(ssh)
+	if !slices.Contains(argsW, "UserKnownHostsFile=NUL") {
+		t.Errorf("windows ssh argv = %q, want UserKnownHostsFile=NUL", argsW)
+	}
+
+	smtp := mustTarget(t, "mail.example.com:587")
+	c = findC(toolsFor(smtp, "linux"))
+	if c.Name != "openssl s_client" || c.Bin != "openssl" {
+		t.Fatalf("smtp target c-slot = {Name:%q Bin:%q}, want openssl s_client", c.Name, c.Bin)
+	}
+	args, _, _ = c.Build(smtp)
+	wantSMTP := []string{"s_client", "-starttls", "smtp", "-connect", "mail.example.com:587"}
+	if !slices.Equal(args, wantSMTP) {
+		t.Errorf("smtp argv = %q, want %q", args, wantSMTP)
+	}
+
+	// HTTPS and no-proto targets keep curl.
+	for _, raw := range []string{"github.com", "example.com:9999"} {
+		tgt := mustTarget(t, raw)
+		if c := findC(toolsFor(tgt, "linux")); c.Bin != "curl" {
+			t.Errorf("%s c-slot bin = %q, want curl", raw, c.Bin)
+		}
+	}
+}
+
+// TestExtractCurlShapeGuard: ssh/s_client share the "c" hotkey, so their
+// output must never mis-parse as curl facts.
+func TestExtractCurlShapeGuard(t *testing.T) {
+	for _, stdout := range [][]string{
+		{"220 mail.example.com ESMTP Postfix"},   // s_client SMTP greeting
+		{"Connection to example.com 22 closed."}, // non-numeric first field
+		{"250 8.0 ok extra"},                     // field 3 not an IP
+	} {
+		if facts := extractFacts("c", "linux", stdout); facts != nil {
+			t.Errorf("extractFacts(%q) = %v, want nil", stdout, facts)
+		}
+	}
+}
+
 func factVal(facts []Fact, key string) (string, bool) {
 	for _, f := range facts {
 		if f.Key == key {

@@ -52,9 +52,14 @@ then diagnostic quality, usability, and maintenance.
    ("IPv6 unreachable, connected via IPv4"). Default-route/gateway garnish and
    nslookup fact extraction remain IPv4-only.
 
-9. **Make drill-down tools protocol-aware.** Do not offer an HTTPS-oriented
+9. **Make drill-down tools protocol-aware.** FIXED Do not offer an HTTPS-oriented
    `curl` command for SSH and SMTP targets. Offer relevant commands such as
    `ssh -v`, `openssl s_client`, or a bounded protocol-specific banner check.
+   The `c` slot now switches on the target protocol: SSH targets get a bounded
+   `ssh -v` handshake check (BatchMode, throwaway known-hosts file, 3 s connect
+   timeout), SMTP targets get `openssl s_client -starttls smtp`, and everything
+   else keeps `curl`. The curl fact extractor requires the exact `-w` output
+   shape so ssh/s_client output sharing the hotkey never mis-parses.
 
 10. **Parse `mtr` and `pathping` output.** Produce a route-quality result showing
     packet loss, latency spikes, and the first suspicious hop while retaining
