@@ -101,9 +101,11 @@ type Probe struct {
 	Run  func(ctx context.Context, deps map[ProbeID]ProbeResult) ProbeResult
 }
 
+// ProbeTimeout bounds a single probe (the model wraps each in a child ctx).
+// A var so the -timeout flag can override the default before probes run.
+var ProbeTimeout = 4 * time.Second
+
 const (
-	// ProbeTimeout bounds a single probe (the model wraps each in a child ctx).
-	ProbeTimeout = 4 * time.Second
 	// attemptDelay is the Happy Eyeballs (RFC 8305) connection-attempt stagger:
 	// the next address starts this long after the previous one, or immediately
 	// once the previous attempt fails.
@@ -125,6 +127,19 @@ var (
 	internetEndpoints4 = []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("8.8.8.8")}
 	internetEndpoints6 = []net.IP{net.ParseIP("2606:4700:4700::1111"), net.ParseIP("2001:4860:4860::8888")}
 )
+
+// SetEgressEndpoints replaces the direct-egress probe targets, partitioned by
+// address family. A family with no endpoints is simply not probed.
+func SetEgressEndpoints(ips []net.IP) {
+	internetEndpoints4, internetEndpoints6 = nil, nil
+	for _, ip := range ips {
+		if ip.To4() != nil {
+			internetEndpoints4 = append(internetEndpoints4, ip)
+		} else {
+			internetEndpoints6 = append(internetEndpoints6, ip)
+		}
+	}
+}
 
 // netops holds every network/OS touchpoint the probes use, as function fields
 // so tests can stub them and run probes deterministically without real
@@ -254,9 +269,15 @@ func (o *netops) internetProbe(ctx context.Context, _ map[ProbeID]ProbeResult) P
 	}
 	if prim.conn == nil {
 		r.Attempts = append(v4.attempts, v6.attempts...)
-		src, iface := o.pathIdentity(ctx, nil, internetEndpoints4[0], 443)
+		var dst net.IP // any configured endpoint works for path identity
+		if all := append(append([]net.IP{}, internetEndpoints4...), internetEndpoints6...); len(all) > 0 {
+			dst = all[0]
+			r.Detail = "no direct TCP egress to " + joinIPs(all) + " (port 443)"
+		} else {
+			r.Detail = "no direct TCP egress endpoints configured"
+		}
+		src, iface := o.pathIdentity(ctx, nil, dst, 443)
 		r.Status, r.Source, r.Iface = StatusFail, src, iface
-		r.Detail = "no direct TCP egress on IPv4 (1.1.1.1, 8.8.8.8:443) or IPv6"
 		r.Fix = "no internet egress — proxy-only/filtered network? check upstream"
 		return r
 	}

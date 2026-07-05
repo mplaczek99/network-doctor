@@ -75,11 +75,11 @@ then diagnostic quality, usability, and maintenance.
 
 ## Priority 3 — Usability and Automation
 
-11. ~~**Add `--json` or `--no-tui` output.**~~ Done: `--json` runs the probe
+11. ~~**Add `--json` or `--no-tui` output.**~~ FIXED: `--json` runs the probe
     DAG headless and prints a stable JSON report (`version`, `target`,
     `checks[]`, `summary`, `ok`); exit codes unchanged.
 
-12. **Make timeouts and egress endpoints configurable.** Keep safe defaults but
+12. **Make timeouts and egress endpoints configurable.** FIXED Keep safe defaults but
     allow users to replace the four-second probe timeout and public direct-egress
     addresses.
 

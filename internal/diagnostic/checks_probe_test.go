@@ -148,8 +148,8 @@ func TestInternetProbeFamilies(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	r = down.internetProbe(ctx, nil)
-	if r.Status != StatusFail || !strings.Contains(r.Detail, "IPv4") || !strings.Contains(r.Detail, "IPv6") {
-		t.Errorf("both families down = %+v, want FAIL naming both families", r)
+	if r.Status != StatusFail || !strings.Contains(r.Detail, "1.1.1.1") || !strings.Contains(r.Detail, "2606:4700:4700::1111") {
+		t.Errorf("both families down = %+v, want FAIL naming endpoints from both families", r)
 	}
 }
 

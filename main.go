@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mplaczek99/network-doctor/internal/diagnostic"
@@ -27,8 +28,27 @@ func run(args []string, stdout, stderr io.Writer) int {
 	toolbox := fs.Bool("toolbox", false, "start in toolbox mode")
 	jsonOut := fs.Bool("json", false, "run the checks headless and print a JSON report")
 	showVersion := fs.Bool("version", false, "print version and exit")
+	timeout := fs.Duration("timeout", diagnostic.ProbeTimeout, "per-check probe timeout")
+	egress := fs.String("egress", "", "comma-separated IPs for the direct-egress check (default 1.1.1.1,8.8.8.8,2606:4700:4700::1111,2001:4860:4860::8888)")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if *timeout <= 0 {
+		fmt.Fprintln(stderr, "network-doctor: -timeout must be positive")
+		return 2
+	}
+	diagnostic.ProbeTimeout = *timeout
+	if *egress != "" {
+		var ips []net.IP
+		for _, s := range strings.Split(*egress, ",") {
+			ip := net.ParseIP(strings.TrimSpace(s))
+			if ip == nil {
+				fmt.Fprintf(stderr, "network-doctor: invalid -egress IP %q\n", s)
+				return 2
+			}
+			ips = append(ips, ip)
+		}
+		diagnostic.SetEgressEndpoints(ips)
 	}
 	if *showVersion {
 		fmt.Fprintln(stdout, "network-doctor", version)
