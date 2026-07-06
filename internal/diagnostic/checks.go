@@ -120,13 +120,25 @@ const (
 // probeHost is the host used by the generic (no-target) DNS + egress probes.
 const probeHost = "connectivitycheck.gstatic.com"
 
+// DefaultEgressList is the built-in direct-egress endpoint list, in the CLI
+// -egress flag spelling so the flag's default and help text cannot drift.
+const DefaultEgressList = "1.1.1.1,8.8.8.8,2606:4700:4700::1111,2001:4860:4860::8888"
+
 // internetEndpoints4/6 are the ordered direct-egress endpoints per address
 // family; first connect wins within a family. Honestly "direct TCP egress" —
 // proxy-only networks can fail this.
-var (
-	internetEndpoints4 = []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("8.8.8.8")}
-	internetEndpoints6 = []net.IP{net.ParseIP("2606:4700:4700::1111"), net.ParseIP("2001:4860:4860::8888")}
-)
+var internetEndpoints4, internetEndpoints6 = defaultEgressEndpoints()
+
+func defaultEgressEndpoints() (v4, v6 []net.IP) {
+	for _, s := range strings.Split(DefaultEgressList, ",") {
+		if ip := net.ParseIP(s); ip.To4() != nil {
+			v4 = append(v4, ip)
+		} else {
+			v6 = append(v6, ip)
+		}
+	}
+	return v4, v6
+}
 
 // SetEgressEndpoints replaces the direct-egress probe targets, partitioned by
 // address family. A family with no endpoints is simply not probed.

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -25,12 +26,36 @@ func main() {
 func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("network-doctor", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	// Suppress the automatic usage dump: an explicit -help prints the full
+	// usage on stdout and exits 0, a parse error gets only a one-line hint.
+	fs.Usage = func() {}
 	toolbox := fs.Bool("toolbox", false, "start in toolbox mode")
 	jsonOut := fs.Bool("json", false, "run the checks headless and print a JSON report")
 	showVersion := fs.Bool("version", false, "print version and exit")
 	timeout := fs.Duration("timeout", diagnostic.ProbeTimeout, "per-check probe timeout")
-	egress := fs.String("egress", "", "comma-separated IPs for the direct-egress check (default 1.1.1.1,8.8.8.8,2606:4700:4700::1111,2001:4860:4860::8888)")
-	if err := fs.Parse(args); err != nil {
+	egress := fs.String("egress", diagnostic.DefaultEgressList, "comma-separated IPs for the direct-egress check")
+
+	// The stdlib flag package stops parsing at the first non-flag argument;
+	// peel positionals off and re-parse the remainder so flags are accepted
+	// both before and after the target.
+	var positional []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				printUsage(stdout, fs)
+				return 0
+			}
+			fmt.Fprintln(stderr, "run 'network-doctor --help' for usage")
+			return 2
+		}
+		if fs.NArg() == 0 {
+			break
+		}
+		positional = append(positional, fs.Arg(0))
+		args = fs.Args()[1:]
+	}
+	if len(positional) > 1 {
+		fmt.Fprintf(stderr, "network-doctor: unexpected arguments: %v\n", positional[1:])
 		return 2
 	}
 	if *timeout <= 0 {
@@ -38,18 +63,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	diagnostic.ProbeTimeout = *timeout
-	if *egress != "" {
-		var ips []net.IP
-		for _, s := range strings.Split(*egress, ",") {
-			ip := net.ParseIP(strings.TrimSpace(s))
-			if ip == nil {
-				fmt.Fprintf(stderr, "network-doctor: invalid -egress IP %q\n", s)
-				return 2
-			}
-			ips = append(ips, ip)
+	var ips []net.IP
+	for _, s := range strings.Split(*egress, ",") {
+		ip := net.ParseIP(strings.TrimSpace(s))
+		if ip == nil {
+			fmt.Fprintf(stderr, "network-doctor: invalid -egress IP %q\n", s)
+			return 2
 		}
-		diagnostic.SetEgressEndpoints(ips)
+		ips = append(ips, ip)
 	}
+	diagnostic.SetEgressEndpoints(ips)
 	if *showVersion {
 		fmt.Fprintln(stdout, "network-doctor", version)
 		return 0
@@ -58,14 +81,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "network-doctor: -json and -toolbox cannot be combined")
 		return 2
 	}
-	if fs.NArg() > 1 {
-		fmt.Fprintf(stderr, "network-doctor: unexpected arguments: %v\n", fs.Args()[1:])
-		return 2
-	}
 
 	var t *diagnostic.Target
-	if arg := fs.Arg(0); arg != "" {
-		parsed, err := diagnostic.ParseTarget(arg)
+	if len(positional) == 1 {
+		parsed, err := diagnostic.ParseTarget(positional[0])
 		if err != nil {
 			fmt.Fprintln(stderr, "network-doctor:", err)
 			return 2 // bad args / validation reject
@@ -84,6 +103,28 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return ui.ExitCode(final)
+}
+
+// printUsage writes the full help text: usage line, the target grammar
+// ParseTarget accepts, and the flags.
+func printUsage(w io.Writer, fs *flag.FlagSet) {
+	fmt.Fprint(w, `Usage: network-doctor [flags] [target]
+
+Diagnoses network connectivity layer by layer. With no target it runs the
+generic checks; with a target it also probes that endpoint. Flags may be
+given before or after the target.
+
+Target forms:
+  example.com            hostname (default port 443)
+  example.com:8022       hostname with port (protocol inferred from the port)
+  https://example.com/x  URL (scheme sets protocol and default port; path ignored)
+  192.0.2.1, 2001:db8::1 IP literal
+  [2001:db8::1]:443      IP literal with port (IPv6 needs the brackets)
+
+Flags:
+`)
+	fs.SetOutput(w)
+	fs.PrintDefaults()
 }
 
 // The report is the stable machine-readable contract: field names and the
