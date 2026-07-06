@@ -169,6 +169,10 @@ func (m model) chainRan() bool { return len(m.started) > 0 }
 
 func (m model) allDone() bool { return len(m.results) == len(m.probes) }
 
+// reportReady reports whether the report is complete enough to export: every
+// check has a result and no tool job is still streaming output into it.
+func (m model) reportReady() bool { return m.allDone() && m.activeJob == nil }
+
 // spinnerActive reports whether the spinner tick chain should keep running:
 // while probes are pending or a drill-down job is live.
 func (m model) spinnerActive() bool { return !m.allDone() || m.activeJob != nil }
@@ -300,7 +304,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 	case "y", "w":
-		if !m.allDone() {
+		if !m.reportReady() {
 			return m, nil
 		}
 		m.notice = exportReport(m.report(), msg.String() == "w")
@@ -852,7 +856,7 @@ func (m model) helpView(deferred, clipped bool) string {
 	if m.fixTool() != nil {
 		kv = append(kv, "f", "try a fix")
 	}
-	if m.allDone() {
+	if m.reportReady() {
 		kv = append(kv, "y", "copy report", "w", "save report")
 	}
 	kv = append(kv, "r", "run again", "q", "quit")
