@@ -169,9 +169,13 @@ func (m model) chainRan() bool { return len(m.started) > 0 }
 
 func (m model) allDone() bool { return len(m.results) == len(m.probes) }
 
-// reportReady reports whether the report is complete enough to export: every
-// check has a result and no tool job is still streaming output into it.
-func (m model) reportReady() bool { return m.allDone() && m.activeJob == nil }
+// reportReady reports whether there is a finished report to export: every
+// check has a result and a tool command actually ran to the end (done or
+// failed — not never-run, still streaming, or canceled).
+func (m model) reportReady() bool {
+	return m.allDone() && m.activeJob == nil &&
+		(m.jobStatus == JobDone || m.jobStatus == JobFailed)
+}
 
 // spinnerActive reports whether the spinner tick chain should keep running:
 // while probes are pending or a drill-down job is live.
