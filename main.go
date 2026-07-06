@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"regexp"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -123,8 +124,12 @@ Target forms:
 
 Flags:
 `)
-	fs.SetOutput(w)
+	var b strings.Builder
+	fs.SetOutput(&b)
 	fs.PrintDefaults()
+	// Bracket the value-type placeholder: "-egress string" -> "-egress [string]".
+	typeLine := regexp.MustCompile(`(?m)^(  -\S+) (\S+)$`)
+	fmt.Fprint(w, typeLine.ReplaceAllString(b.String(), "$1 [$2]"))
 }
 
 // The report is the stable machine-readable contract: field names and the
