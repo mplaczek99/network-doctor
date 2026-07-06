@@ -1019,7 +1019,7 @@ func (m model) outputView() string {
 	b.WriteString(titleStyle.Render("$ "+m.jobDisplay) + "\n")
 	status := faintStyle.Render(m.jobName+" — ") + styledStatus(m.jobStatus)
 	if m.activeJob != nil {
-		status += faintStyle.Render(fmt.Sprintf(" (%.0fs)", time.Since(m.jobStart).Seconds()))
+		status += " " + m.spinner.View() + faintStyle.Render(fmt.Sprintf(" %.0fs", time.Since(m.jobStart).Seconds()))
 	}
 	b.WriteString(status + "\n")
 	b.WriteString(m.vp.View() + "\n")
@@ -1136,7 +1136,7 @@ func (m model) jobView(avail int) string {
 	b.WriteString(titleStyle.Render("$ "+m.jobDisplay) + "\n")
 	status := faintStyle.Render(m.jobName+" — ") + styledStatus(m.jobStatus)
 	if m.activeJob != nil {
-		status += faintStyle.Render(fmt.Sprintf(" (%.0fs)", time.Since(m.jobStart).Seconds()))
+		status += " " + m.spinner.View() + faintStyle.Render(fmt.Sprintf(" %.0fs", time.Since(m.jobStart).Seconds()))
 	}
 	b.WriteString(status + "\n")
 
