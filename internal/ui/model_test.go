@@ -205,3 +205,19 @@ func TestBatchedRunesReplayed(t *testing.T) {
 		t.Errorf("selected = %d after batched jjj, want 3", nm.selected)
 	}
 }
+
+// Enter opens the output viewer while a job is running even before any output
+// has arrived (e.g. mtr --report buffers everything until exit).
+func TestEnterViewerBeforeOutput(t *testing.T) {
+	m := newModel(mustTarget(t, "example.com:443"))
+	m.activeJob = &job{}
+	m.jobStatus = JobRunning
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	nm := asModel(t, u)
+	if !nm.viewing {
+		t.Fatal("enter must open the viewer for a running job with no output yet")
+	}
+	if !strings.Contains(nm.View(), "no output yet") {
+		t.Error("empty viewer must show the (no output yet) placeholder")
+	}
+}

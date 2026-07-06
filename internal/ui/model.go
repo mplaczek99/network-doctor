@@ -312,8 +312,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "enter":
-		if len(m.jobLines) == 0 {
-			return m, nil
+		if m.activeJob == nil && m.jobStatus == JobQueued {
+			return m, nil // no job has run; nothing to view
 		}
 		m.viewing, m.follow = true, true
 		m.vp = viewport.New(m.vpWidth(), m.vpHeight())
@@ -640,6 +640,9 @@ func (m model) stdoutLines() []string {
 func (m model) jobContent(w int) string {
 	if w <= 0 {
 		w = 80
+	}
+	if len(m.jobLines) == 0 {
+		return lipgloss.NewStyle().Width(w).Render(faintStyle.Render("(no output yet)"))
 	}
 	var b strings.Builder
 	for i, ln := range m.jobLines {
