@@ -102,6 +102,10 @@ type model struct {
 	input    textinput.Model
 	inputErr string
 
+	// Confirm gate: a tool marked Confirm (nmap) is held here after its hotkey,
+	// showing the exact command until 'y' runs it or any other key cancels.
+	confirmTool *Tool
+
 	// Auto-fix (f): fixing marks the active job as a fix command — when its
 	// terminal event arrives the chain reruns to verify the fix. verifying
 	// labels that rerun's verdict in the banner.
@@ -180,6 +184,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.confirmTool != nil {
+			return m.handleConfirmKey(msg)
+		}
 		if m.entering {
 			return m.handlePromptKey(msg)
 		}
@@ -315,6 +322,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Tool hotkeys (contextual toolbox).
 	for _, tool := range m.tools {
 		if msg.String() == tool.Key {
+			if tool.Confirm {
+				t := tool // hold for the confirm gate; run happens on 'y'
+				m.confirmTool = &t
+				return m, nil
+			}
 			if m.activeJob != nil {
 				m.activeJob.cancel()
 				m.pending = &pendingAction{kind: pendTool, tool: tool} // last write wins
@@ -322,6 +334,26 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, m.launchTool(tool)
 		}
+	}
+	return m, nil
+}
+
+// handleConfirmKey handles keys while an advanced tool's command is shown: 'y'
+// runs it (deferred if a job is still live), ctrl+c quits, and any other key —
+// including esc — cancels without running the scan.
+func (m model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	tool := *m.confirmTool
+	m.confirmTool = nil
+	switch msg.String() {
+	case "y":
+		if m.activeJob != nil {
+			m.activeJob.cancel()
+			m.pending = &pendingAction{kind: pendTool, tool: tool}
+			return m, nil
+		}
+		return m, m.launchTool(tool)
+	case "ctrl+c":
+		return m.handleKey(msg) // quit path, incl. deferred quit under an active job
 	}
 	return m, nil
 }
@@ -689,6 +721,9 @@ func (m model) View() string {
 	if m.entering {
 		help = m.promptView()
 	}
+	if m.confirmTool != nil {
+		help = m.confirmView()
+	}
 	toolbox := m.toolboxView()
 	top := header + "\n" + m.banner() + "\n\n"
 	// Adaptive tail: the job pane gets whatever height the rest doesn't use.
@@ -778,6 +813,17 @@ func helpKeys(kv ...string) string {
 		parts = append(parts, keyStyle.Render(kv[i])+" "+faintStyle.Render(kv[i+1]))
 	}
 	return strings.Join(parts, faintStyle.Render("  ·  "))
+}
+
+// confirmView replaces the help bar with the pending advanced tool's exact
+// command and a run/cancel gate, so the scan is always shown before it runs.
+func (m model) confirmView() string {
+	_, _, display := m.confirmTool.Build(m.target)
+	body := panelTitleStyle.Render("Run "+m.confirmTool.Name+"?") + "\n" +
+		faintStyle.Render("Actively scans "+m.target.Host+" — may trip its intrusion detection.") + "\n" +
+		"$ " + display
+	w := max(min(m.width-2, 76), 24)
+	return panelStyle.Width(w).Render(body) + "\n" + helpKeys("y", "run", "esc", "cancel")
 }
 
 // promptView is the rerun prompt panel, shown in place of the help bar.
@@ -989,6 +1035,7 @@ var toolPurpose = map[string]string{
 	"c": "web check",
 	"t": "trace the path",
 	"m": "path quality",
+	"n": "port scan",
 }
 
 // progressBar is a w-cell block bar, filled proportionally to done/total.

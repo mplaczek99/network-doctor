@@ -20,6 +20,7 @@ type Tool struct {
 	Name    string        // display label
 	Bin     string        // binary to resolve via LookPath
 	Timeout time.Duration // per-tool job timeout; 0 = default toolTimeout
+	Confirm bool          // show the exact command and wait for a keypress before running
 	// Build returns the argv (never a shell string), the process env (nil =
 	// inherit), and a human-display command string (shell-quoted, display only).
 	Build func(t *diagnostic.Target) (args, env []string, display string)
@@ -105,7 +106,42 @@ func toolsFor(t *diagnostic.Target, goos string) []Tool {
 			// mtr report mode only — never curses inside our TUI.
 			staticTool(quote, "m", "mtr", "mtr", "--report", "--report-cycles", "5", host))
 	}
+
+	// nmap is the one advanced tool: it actively scans the target, so it's
+	// gated behind a shown-command confirmation (Confirm) rather than launching
+	// on the hotkey like everything else.
+	tools = append(tools, nmapTool(host, goos))
 	return tools
+}
+
+// nmapTool builds the nmap adapter: an explicitly-confirmed port scan with
+// conservative defaults, because a scan can trip the target's intrusion
+// detection. A plain TCP connect scan (-sT — no raw sockets or root, so the
+// shown command is exactly what runs at any privilege), polite timing (-T2) to
+// keep the probe rate low, host discovery skipped (-Pn, the target is already
+// known reachable), and a hard --host-timeout so the run always ends and yields
+// partial results before the job timeout kills it. An explicit target port
+// scans only that port; otherwise the 100 most common ports. Deliberately no
+// -sV/-O/-A: version and OS detection are louder, slower, and not needed to
+// answer "is the port open?".
+func nmapTool(host, goos string) Tool {
+	quote := shellArgs
+	if goos == "windows" {
+		quote = psArgs
+	}
+	return Tool{
+		Key: "n", Name: "nmap", Bin: "nmap", Confirm: true, Timeout: 120 * time.Second,
+		Build: func(t *diagnostic.Target) ([]string, []string, string) {
+			args := []string{"-sT", "-T2", "-Pn", "--host-timeout", "90s"}
+			if t.PortExplicit {
+				args = append(args, "-p", strconv.Itoa(t.Port))
+			} else {
+				args = append(args, "--top-ports", "100")
+			}
+			args = append(args, host)
+			return args, nil, "nmap " + quote(args)
+		},
+	}
 }
 
 // curlTool builds the curl adapter. On Windows the binary and the displayed
@@ -282,8 +318,31 @@ func extractFacts(toolKey, goos string, stdout []string) []Fact {
 			return routeFacts(pathpingHops(stdout))
 		}
 		return routeFacts(mtrHops(stdout))
+	case "n":
+		return nmapFacts(stdout)
 	}
 	return facts
+}
+
+// nmapPortRE matches an open-port row ("443/tcp  open  https"). The mandatory
+// whitespace after "open" excludes the "open|filtered" state, which is a maybe,
+// not an open port.
+var nmapPortRE = regexp.MustCompile(`^(\d+)/(?:tcp|udp)\s+open\s+(\S+)`)
+
+// nmapFacts summarizes an nmap scan as the list of open ports ("22/ssh,
+// 443/https"), the one signal worth surfacing; the raw output stays
+// authoritative for the rest.
+func nmapFacts(stdout []string) []Fact {
+	var open []string
+	for _, ln := range stdout {
+		if m := nmapPortRE.FindStringSubmatch(strings.TrimSpace(ln)); m != nil {
+			open = append(open, m[1]+"/"+m[2])
+		}
+	}
+	if len(open) == 0 {
+		return nil
+	}
+	return []Fact{{"open_ports", strings.Join(open, ", ")}}
 }
 
 // windowsPingFacts parses "(X% loss)" and "Average = Xms" — English-locale

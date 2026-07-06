@@ -30,6 +30,7 @@ func TestToolsForDefinitions(t *testing.T) {
 		display        string
 		lcAllEnv       bool // true: env ends with LC_ALL=C; false: env is nil
 	}
+	nmapArgs := []string{"-sT", "-T2", "-Pn", "--host-timeout", "90s", "--top-ports", "100", "github.com"}
 	wantHost := []want{
 		{"i", "ip route", "ip", []string{"route"}, "ip route", false},
 		{"s", "ss", "ss", []string{"-tunp"}, "ss -tunp", false},
@@ -38,6 +39,7 @@ func TestToolsForDefinitions(t *testing.T) {
 		{"c", "curl", "curl", curlArgs, "LC_ALL=C curl " + shellArgs(curlArgs), true},
 		{"t", "traceroute", "traceroute", []string{"-w", "2", "-q", "1", "-m", "20", "github.com"}, "traceroute -w 2 -q 1 -m 20 github.com", false},
 		{"m", "mtr", "mtr", []string{"--report", "--report-cycles", "5", "github.com"}, "mtr --report --report-cycles 5 github.com", false},
+		{"n", "nmap", "nmap", nmapArgs, "nmap " + shellArgs(nmapArgs), false},
 	}
 
 	got := toolsFor(tgt, "linux")
@@ -143,6 +145,57 @@ func TestToolsForProtocol(t *testing.T) {
 		if c := findC(toolsFor(tgt, "linux")); c.Bin != "curl" {
 			t.Errorf("%s c-slot bin = %q, want curl", raw, c.Bin)
 		}
+	}
+}
+
+// TestNmapTool pins the advanced tool: it must be gated behind Confirm, scan
+// only the target's explicit port, and never carry an aggressive scan flag.
+func TestNmapTool(t *testing.T) {
+	tgt := mustTarget(t, "example.com:8443")
+	var tool Tool
+	for _, x := range toolsFor(tgt, "linux") {
+		if x.Key == "n" {
+			tool = x
+		}
+	}
+	if tool.Bin != "nmap" {
+		t.Fatal("no nmap tool with key 'n'")
+	}
+	if !tool.Confirm {
+		t.Error("nmap must set Confirm so the command is shown before running")
+	}
+	args, _, display := tool.Build(tgt)
+	want := []string{"-sT", "-T2", "-Pn", "--host-timeout", "90s", "-p", "8443", "example.com"}
+	if !slices.Equal(args, want) {
+		t.Errorf("nmap explicit-port argv = %q, want %q", args, want)
+	}
+	if !strings.HasPrefix(display, "nmap ") {
+		t.Errorf("nmap display = %q, want it to start with the command", display)
+	}
+	for _, bad := range []string{"-sS", "-sV", "-sU", "-O", "-A"} {
+		if slices.Contains(args, bad) {
+			t.Errorf("nmap argv contains aggressive flag %q", bad)
+		}
+	}
+}
+
+// TestExtractNmap: only truly open ports surface; "closed" and "open|filtered"
+// (a maybe) are excluded.
+func TestExtractNmap(t *testing.T) {
+	stdout := []string{
+		"Starting Nmap 7.94 ( https://nmap.org )",
+		"PORT     STATE         SERVICE",
+		"22/tcp   open          ssh",
+		"80/tcp   closed        http",
+		"443/tcp  open          https",
+		"3306/tcp open|filtered mysql",
+	}
+	facts := extractFacts("n", "linux", stdout)
+	if v, ok := factVal(facts, "open_ports"); !ok || v != "22/ssh, 443/https" {
+		t.Errorf("open_ports = %q (%v), want %q", v, ok, "22/ssh, 443/https")
+	}
+	if facts := extractFacts("n", "linux", []string{"80/tcp closed http"}); facts != nil {
+		t.Errorf("no open ports should yield nil facts, got %v", facts)
 	}
 }
 
@@ -336,7 +389,7 @@ func TestToolsForWindows(t *testing.T) {
 
 	wantBins := map[string]string{
 		"i": "route", "s": "netstat", "p": "ping", "d": "nslookup",
-		"c": "curl.exe", "t": "tracert", "m": "pathping",
+		"c": "curl.exe", "t": "tracert", "m": "pathping", "n": "nmap",
 	}
 	if len(tools) != len(wantBins) {
 		t.Fatalf("windows table has %d tools, want %d", len(tools), len(wantBins))
@@ -417,7 +470,7 @@ func TestToolsForDarwin(t *testing.T) {
 // Every table keeps the same hotkey set so muscle memory transfers across OSes.
 func TestToolTablesSameHotkeys(t *testing.T) {
 	tgt := mustTarget(t, "github.com")
-	want := []string{"i", "s", "p", "d", "c", "t", "m"}
+	want := []string{"i", "s", "p", "d", "c", "t", "m", "n"}
 	for _, goos := range []string{"linux", "darwin", "windows"} {
 		var keys []string
 		for _, tl := range toolsFor(tgt, goos) {

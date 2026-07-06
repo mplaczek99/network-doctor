@@ -12,9 +12,9 @@ func TestToolsFor(t *testing.T) {
 		if got := len(toolsFor(nil, goos)); got != 2 {
 			t.Errorf("%s toolsFor(nil) = %d, want 2", goos, got)
 		}
-		// Target mode: + ping, dns, curl, trace, path-quality.
-		if got := len(toolsFor(mustTarget(t, "github.com"), goos)); got != 7 {
-			t.Errorf("%s toolsFor(target) = %d, want 7", goos, got)
+		// Target mode: + ping, dns, curl, trace, path-quality, nmap.
+		if got := len(toolsFor(mustTarget(t, "github.com"), goos)); got != 8 {
+			t.Errorf("%s toolsFor(target) = %d, want 8", goos, got)
 		}
 	}
 }

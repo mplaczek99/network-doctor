@@ -122,9 +122,21 @@ then diagnostic quality, usability, and maintenance.
     route by JobID + live==0 pending → strip/focus/`tab`/`x` UI → `--jobs`
     flag, queue, retention.
 
-15. **Add `nmap` integration.** Treat this as an explicitly invoked advanced
-    tool, show the exact command before running it, and use conservative scan
-    defaults because scans can trigger security controls.
+15. **Add `nmap` integration.** FIXED Added as the `[n]` toolbox tool on every
+    OS. It is the only tool marked `Confirm`: pressing `n` opens a gate showing
+    the exact command and waits for `y` to run it — any other key, including
+    esc, cancels without scanning; every other tool still launches on its
+    hotkey. Conservative defaults, because a scan can trip the target's
+    intrusion detection: `nmap -sT -T2 -Pn --host-timeout 90s`, then `-p <port>`
+    when the target port is explicit (that port only) else `--top-ports 100`.
+    `-sT` connect scan needs no root, so the shown command is exactly what runs
+    at any privilege; `-T2` keeps the probe rate polite; `-Pn` skips redundant
+    discovery of an already-reachable target; `--host-timeout` guarantees it
+    ends and yields partial results before the 120 s job timeout. Deliberately
+    no `-sS`/`-sV`/`-O`/`-A`. The fact extractor emits `open_ports` from the
+    output (`open|filtered` and `closed` excluded); the raw sanitized output
+    stays authoritative. The `Confirm` gate is a general `Tool` field reusable
+    by any future advanced tool.
 
 ## Maintenance
 

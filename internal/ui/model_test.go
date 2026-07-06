@@ -33,6 +33,32 @@ func TestStaleProbeDropped(t *testing.T) {
 	}
 }
 
+// The nmap hotkey holds the exact command in a confirm gate instead of
+// launching; the gate shows the command, and any non-'y' key cancels without
+// ever starting a scan.
+func TestNmapConfirmGate(t *testing.T) {
+	m := newModel(mustTarget(t, "example.com:443"))
+	u, cmd := m.Update(keyMsg("n"))
+	nm := asModel(t, u)
+	if nm.confirmTool == nil || nm.confirmTool.Key != "n" {
+		t.Fatal("n must open the confirm gate for nmap")
+	}
+	if nm.activeJob != nil || cmd != nil {
+		t.Error("confirm gate must not launch a job yet")
+	}
+	if !strings.Contains(nm.View(), "nmap ") {
+		t.Error("confirm gate must show the nmap command before running")
+	}
+	u, _ = nm.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	nm = asModel(t, u)
+	if nm.confirmTool != nil {
+		t.Error("esc must close the confirm gate")
+	}
+	if nm.activeJob != nil {
+		t.Error("esc must not launch a scan")
+	}
+}
+
 // 'r' opens the rerun prompt; Enter bumps the generation, clears run state,
 // and resets the context.
 func TestRerunResets(t *testing.T) {
