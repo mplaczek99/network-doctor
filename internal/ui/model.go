@@ -311,8 +311,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "f":
 		fix := m.fixTool()
-		if fix == nil {
-			return m, nil
+		if fix == nil || m.fixing {
+			return m, nil // no fix, or the fix is already running
 		}
 		if m.activeJob != nil {
 			m.activeJob.cancel()
@@ -847,13 +847,17 @@ func (m model) promptView() string {
 
 func (m model) helpView(deferred, clipped bool) string {
 	if deferred {
-		return helpKeys("r", "run the checks", "letter", "runs that tool", "q", "quit")
+		kv := []string{"r", "run the checks"}
+		if len(m.tools) > 0 {
+			kv = append(kv, "letter", "runs that tool")
+		}
+		return helpKeys(append(kv, "q", "quit")...)
 	}
 	kv := []string{"↑/↓", "pick a check"}
 	if clipped {
 		kv = append(kv, "enter", "full output")
 	}
-	if m.fixTool() != nil {
+	if m.fixTool() != nil && !m.fixing {
 		kv = append(kv, "f", "try a fix")
 	}
 	if m.reportReady() {
