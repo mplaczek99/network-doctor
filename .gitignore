@@ -12,6 +12,3 @@ graphify-out/
 .claude/
 CLAUDE.md
 AGENTS.md
-
-# Tokens
-*.token
