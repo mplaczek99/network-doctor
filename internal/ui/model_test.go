@@ -194,3 +194,14 @@ func TestExitCode(t *testing.T) {
 		t.Error("a fail must exit 1")
 	}
 }
+
+// Runes batched into one KeyMsg by a fast stdin read ("jjj") are replayed one
+// key at a time instead of matching no binding and being dropped.
+func TestBatchedRunesReplayed(t *testing.T) {
+	m := newModel(mustTarget(t, "example.com:443"))
+	u, _ := m.Update(keyMsg("jjj"))
+	nm := asModel(t, u)
+	if nm.selected != 3 {
+		t.Errorf("selected = %d after batched jjj, want 3", nm.selected)
+	}
+}

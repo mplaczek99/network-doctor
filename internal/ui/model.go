@@ -192,6 +192,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Runes read from stdin in one batch arrive as a single KeyMsg
+		// ("jjj"), which matches no binding; replay them one key at a time.
+		if msg.Type == tea.KeyRunes && !msg.Paste && len(msg.Runes) > 1 {
+			var cmds []tea.Cmd
+			cur := tea.Model(m)
+			for _, r := range msg.Runes {
+				var cmd tea.Cmd
+				cur, cmd = cur.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+				cmds = append(cmds, cmd)
+			}
+			return cur, tea.Batch(cmds...)
+		}
 		if m.confirmTool != nil {
 			return m.handleConfirmKey(msg)
 		}
