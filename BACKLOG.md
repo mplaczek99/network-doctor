@@ -94,9 +94,33 @@ then diagnostic quality, usability, and maintenance.
     copy reuses the already-vendored `go-osc52`; tmux/screen passthrough is not
     implemented.
 
-14. **Design multiple concurrent tool jobs.** Define cancellation, output
-    ownership, resource limits, and UI layout before implementing this. Keep the
-    existing single-job behavior as the default.
+14. **Design multiple concurrent tool jobs.** FIXED (design only — implementation
+    not started). Define cancellation, output ownership, resource limits, and UI
+    layout before implementing this. Keep the existing single-job behavior as the
+    default. Decisions: per-job state moves from the flattened `model` fields
+    into a `jobRun` struct (`runs []*jobRun` + focus index); the jobs.go layer
+    (per-job channel, JobID+Generation identity, process groups) is already
+    N-job safe, so all changes live in the model. Concurrency via `--jobs N`,
+    default 1 (exact current semantics, pending/cancel path unchanged), ceiling
+    4 because concurrent path probes congest the same route and skew each
+    other's measurements. Cancellation: per-job context as today, `x` cancels
+    the focused job, quit/rerun cancel the shared generation context, and
+    `pendingAction` generalizes to fire when the live-job count reaches 0.
+    Same-tool hotkey restarts that job; at the limit new tools queue (reusing
+    `JobQueued`), dispatched on any terminal event; the fix flow (`f`) stays
+    serialized since a fix mutates system state before the verify rerun. Output
+    ownership: Update remains the single writer, done/output messages route by
+    JobID lookup, one chained `waitForMsg` per job, and no cross-job
+    interleaving ever — tail and viewport render only the focused job; facts
+    extract per job, report keyed by toolKey with latest run winning. Limits:
+    5000 lines/job, retain the last 8 terminal runs (evict oldest wholesale),
+    channel buffer and per-tool timeouts unchanged. UI: a one-line job strip
+    (status glyph + hotkey + elapsed) above the focused job's adaptive tail,
+    `tab` cycles focus (also inside the viewport), new keys appear in the help
+    bar only when more than one job exists, so N=1 renders exactly today's
+    pane. Implementation order: extract `jobRun` (pure refactor, tests green) →
+    route by JobID + live==0 pending → strip/focus/`tab`/`x` UI → `--jobs`
+    flag, queue, retention.
 
 15. **Add `nmap` integration.** Treat this as an explicitly invoked advanced
     tool, show the exact command before running it, and use conservative scan
