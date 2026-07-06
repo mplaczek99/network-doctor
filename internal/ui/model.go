@@ -717,7 +717,7 @@ func (m model) View() string {
 
 	header := m.headerView()
 	body := m.bodyView(deferred)
-	help := m.helpView(deferred)
+	help := m.helpView(deferred, false)
 	if m.entering {
 		help = m.promptView()
 	}
@@ -728,7 +728,12 @@ func (m model) View() string {
 	top := header + "\n" + m.banner() + "\n\n"
 	// Adaptive tail: the job pane gets whatever height the rest doesn't use.
 	used := strings.Count(top, "\n") + strings.Count(body, "\n") + strings.Count(toolbox, "\n") + strings.Count(help, "\n") + 2
-	return top + body + "\n" + toolbox + "\n" + m.jobView(m.height-used) + help + "\n"
+	avail := m.height - used
+	// The hint chip adds no newline, so recomputing help can't change avail.
+	if !m.entering && m.confirmTool == nil && m.jobClipped(avail) {
+		help = m.helpView(deferred, true)
+	}
+	return top + body + "\n" + toolbox + "\n" + m.jobView(avail) + help + "\n"
 }
 
 // headerView is the one-line masthead: app name, target, connected network.
@@ -836,12 +841,12 @@ func (m model) promptView() string {
 	return panelStyle.Width(w).Render(body) + "\n" + helpKeys("enter", "run", "esc", "back")
 }
 
-func (m model) helpView(deferred bool) string {
+func (m model) helpView(deferred, clipped bool) string {
 	if deferred {
 		return helpKeys("r", "run the checks", "letter", "runs that tool", "q", "quit")
 	}
 	kv := []string{"↑/↓", "pick a check"}
-	if len(m.jobLines) > 0 {
+	if clipped {
 		kv = append(kv, "enter", "full output")
 	}
 	if m.fixTool() != nil {
@@ -1067,12 +1072,9 @@ func (m model) toolboxView() string {
 	return lipgloss.NewStyle().Width(m.vpWidth()).Render(line) + "\n"
 }
 
-// jobView renders the job pane with an adaptive tail: avail is the screen
-// height left over for this pane; unknown height falls back to jobTailLines.
-func (m model) jobView(avail int) string {
-	if m.activeJob == nil && m.jobStatus == JobQueued {
-		return ""
-	}
+// jobTailN is how many output lines the job pane can show given avail height;
+// unknown terminal height falls back to jobTailLines.
+func (m model) jobTailN(avail int) int {
 	tailN := jobTailLines
 	if m.height > 0 {
 		overhead := 5 // rule, title, status, context note, trailing blank
@@ -1083,6 +1085,25 @@ func (m model) jobView(avail int) string {
 			tailN = 3
 		}
 	}
+	return tailN
+}
+
+// jobClipped reports whether the job pane can't show all the output, so the
+// "enter — full output" hint only appears when it actually adds something.
+func (m model) jobClipped(avail int) bool {
+	if m.activeJob == nil && m.jobStatus == JobQueued {
+		return false
+	}
+	return len(m.jobLines) > m.jobTailN(avail) || m.jobEvicted > 0 || m.jobDropped > 0
+}
+
+// jobView renders the job pane with an adaptive tail: avail is the screen
+// height left over for this pane; unknown height falls back to jobTailLines.
+func (m model) jobView(avail int) string {
+	if m.activeJob == nil && m.jobStatus == JobQueued {
+		return ""
+	}
+	tailN := m.jobTailN(avail)
 	var b strings.Builder
 	b.WriteString(faintStyle.Render(strings.Repeat("─", m.vpWidth())) + "\n")
 	b.WriteString(titleStyle.Render("$ "+m.jobDisplay) + "\n")
