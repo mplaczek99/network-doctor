@@ -819,7 +819,7 @@ func (m model) bodyView(deferred bool) string {
 }
 
 // helpKeys renders key/description pairs as a dim help bar with the keys
-// highlighted, e.g. "r run again  ·  q quit".
+// highlighted, e.g. "r restart  ·  q quit".
 func helpKeys(kv ...string) string {
 	parts := make([]string, 0, len(kv)/2)
 	for i := 0; i+1 < len(kv); i += 2 {
@@ -867,7 +867,7 @@ func (m model) helpView(deferred, clipped bool) string {
 	if m.reportReady() {
 		kv = append(kv, "y", "copy report", "w", "save report")
 	}
-	kv = append(kv, "r", "run again", "q", "quit")
+	kv = append(kv, "r", "restart", "q", "quit")
 	help := helpKeys(kv...)
 	if m.notice != "" {
 		help = faintStyle.Render(m.notice) + "\n" + help
