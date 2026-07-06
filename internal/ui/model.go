@@ -110,6 +110,10 @@ type model struct {
 
 	toolbox bool // --toolbox: chain deferred until 'r'
 
+	// notice is one-line feedback from the last export (y/w): saved path,
+	// copy confirmation, or the error. Sticky until the next export or rerun.
+	notice string
+
 	width, height int
 }
 
@@ -288,6 +292,12 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.vp = viewport.New(m.vpWidth(), m.vpHeight())
 		m.refreshViewport()
 		return m, nil
+	case "y", "w":
+		if !m.allDone() {
+			return m, nil
+		}
+		m.notice = exportReport(m.report(), msg.String() == "w")
+		return m, nil
 	case "f":
 		fix := m.fixTool()
 		if fix == nil {
@@ -433,6 +443,7 @@ func (m *model) doRerun() tea.Cmd {
 	m.started = map[diagnostic.ProbeID]bool{}
 	m.activeJob, m.pending = nil, nil
 	m.fixing, m.verifying = false, false
+	m.notice = ""
 	m.jobStatus, m.jobLines, m.facts, m.jobDropped, m.jobEvicted = JobQueued, nil, nil, 0, 0
 	if m.viewing {
 		m.refreshViewport()
@@ -790,8 +801,15 @@ func (m model) helpView(deferred bool) string {
 	if m.fixTool() != nil {
 		kv = append(kv, "f", "try a fix")
 	}
+	if m.allDone() {
+		kv = append(kv, "y", "copy report", "w", "save report")
+	}
 	kv = append(kv, "r", "run again", "q", "quit")
-	return helpKeys(kv...)
+	help := helpKeys(kv...)
+	if m.notice != "" {
+		help = faintStyle.Render(m.notice) + "\n" + help
+	}
+	return help
 }
 
 // banner is the full-width guidance block under the header: what is happening,

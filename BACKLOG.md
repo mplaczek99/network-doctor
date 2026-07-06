@@ -83,8 +83,16 @@ then diagnostic quality, usability, and maintenance.
     allow users to replace the four-second probe timeout and public direct-egress
     addresses.
 
-13. **Add sanitized report export.** Allow users to copy or save the target,
-    verdict, probe results, connection attempts, and extracted tool facts.
+13. **Add sanitized report export.** FIXED Once the checks finish, `y` copies
+    the report to the clipboard via OSC 52 and `w` saves it as
+    `network-doctor-YYYYMMDD-HHMMSS.txt` (mode 0600) in the working directory,
+    with a one-line notice confirming the result. The plain-text report carries
+    the target, a PASS/WARN/FAIL verdict with the diagnosis summary, per-probe
+    status/detail/fix, source interface, connection attempts, and extracted
+    tool facts. No ANSI styling, and every externally-influenced string passes
+    `textsafe.Clean`, so the export is safe to paste into tickets. Clipboard
+    copy reuses the already-vendored `go-osc52`; tmux/screen passthrough is not
+    implemented.
 
 14. **Design multiple concurrent tool jobs.** Define cancellation, output
     ownership, resource limits, and UI layout before implementing this. Keep the
