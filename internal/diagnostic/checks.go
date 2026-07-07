@@ -497,11 +497,18 @@ func (o *netops) httpProbe(id ProbeID, host string, port int, scheme string, add
 		}
 		// Fresh, non-reusing transport restricted to the resolved/pinned IPs;
 		// redirects and proxy off; bounded response headers (attacker-controlled).
+		// The transport dials on its own goroutine, which can outlive client.Do
+		// on ctx timeout — so the closure must not write to r directly.
+		var dialMu sync.Mutex
+		var dialIP net.IP
+		var dialAttempts []Attempt
 		tr := &http.Transport{
 			Proxy: nil,
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				conn, selected, attempts, _ := o.dialIPs(ctx, addrs, port)
-				r.SelectedIP, r.Attempts = selected, attempts
+				dialMu.Lock()
+				dialIP, dialAttempts = selected, attempts
+				dialMu.Unlock()
 				if conn == nil {
 					if len(attempts) > 0 && attempts[len(attempts)-1].Err != nil {
 						return nil, attempts[len(attempts)-1].Err
@@ -525,6 +532,9 @@ func (o *netops) httpProbe(id ProbeID, host string, port int, scheme string, add
 			return r
 		}
 		resp, err := client.Do(req)
+		dialMu.Lock()
+		r.SelectedIP, r.Attempts = dialIP, dialAttempts
+		dialMu.Unlock()
 		if err != nil {
 			r.Status = StatusFail
 			r.Detail = "no " + protocol + " response: " + textsafe.Clean(err.Error())
