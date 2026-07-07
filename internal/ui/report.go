@@ -12,20 +12,21 @@ import (
 )
 
 // exportReport saves the report next to the user (save=true) or copies it to
-// the clipboard via OSC 52, and returns the one-line notice for the help bar.
+// the clipboard via OSC 52, and returns the one-line notice for the help bar
+// plus whether the export succeeded.
 // ponytail: raw OSC 52 on stderr — add tmux/screen passthrough if someone asks.
-func exportReport(rep string, save bool) string {
+func exportReport(rep string, save bool) (notice string, ok bool) {
 	if save {
 		name := fmt.Sprintf("network-doctor-%s.txt", time.Now().Format("20060102-150405"))
 		if err := os.WriteFile(name, []byte(rep), 0o600); err != nil {
-			return "save failed: " + err.Error()
+			return "save failed: " + err.Error(), false
 		}
-		return "report saved to " + name
+		return "report saved to " + name, true
 	}
 	if _, err := fmt.Fprintf(os.Stderr, "\x1b]52;c;%s\x07", base64.StdEncoding.EncodeToString([]byte(rep))); err != nil {
-		return "copy failed: " + err.Error()
+		return "copy failed: " + err.Error(), false
 	}
-	return "report copied to clipboard (terminal must support OSC 52)"
+	return "report copied to clipboard (terminal must support OSC 52)", true
 }
 
 // report renders the finished run as plain text safe to paste into a ticket

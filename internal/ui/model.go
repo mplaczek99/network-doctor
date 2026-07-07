@@ -88,6 +88,7 @@ type model struct {
 	jobDropped int64 // channel-overflow drops, reported by ToolDoneMsg
 	jobEvicted int   // oldest lines evicted from the jobLines ring buffer
 	jobStart   time.Time
+	jobDur     time.Duration // total runtime of the last finished job
 	facts      []Fact
 
 	// Output viewport (Enter). follow sticks to the tail while output arrives;
@@ -116,7 +117,8 @@ type model struct {
 
 	// notice is one-line feedback from the last export (y/w): saved path,
 	// copy confirmation, or the error. Sticky until the next export or rerun.
-	notice string
+	notice   string
+	noticeOK bool
 
 	width, height int
 }
@@ -137,6 +139,7 @@ var (
 	selStyle        = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
 	keyStyle        = lipgloss.NewStyle().Foreground(accentColor)
 	panelStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(borderColor).Padding(0, 1)
+	focusPanelStyle = panelStyle.BorderForeground(accentColor) // input focus lives here
 	panelTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
 )
 
@@ -251,6 +254,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.jobStatus, m.jobDropped, m.activeJob = msg.Status, msg.Dropped, nil
+		m.jobDur = time.Since(m.jobStart)
 		m.facts = extractFacts(m.jobToolKey, runtime.GOOS, m.stdoutLines())
 		if m.pending != nil {
 			p := m.pending
@@ -323,7 +327,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.reportReady() {
 			return m, nil
 		}
-		m.notice = exportReport(m.report(), msg.String() == "w")
+		m.notice, m.noticeOK = exportReport(m.report(), msg.String() == "w")
 		return m, nil
 	case "f":
 		fix := m.fixTool()
@@ -497,6 +501,7 @@ func (m *model) doRerun() tea.Cmd {
 	m.fixing, m.verifying = false, false
 	m.notice = ""
 	m.jobStatus, m.jobLines, m.facts, m.jobDropped, m.jobEvicted = JobQueued, nil, nil, 0, 0
+	m.jobDur = 0
 	if m.viewing {
 		m.refreshViewport()
 	}
@@ -511,7 +516,7 @@ func (m *model) doRerun() tea.Cmd {
 func (m *model) launchTool(tool Tool) tea.Cmd {
 	if !tool.Available() {
 		m.jobName, m.jobToolKey, m.jobStatus = tool.Name, tool.Key, JobFailed
-		m.jobLines, m.facts = []outLine{{StreamStderr, tool.Bin + " not found — install it"}}, nil
+		m.jobLines, m.facts, m.jobDur = []outLine{{StreamStderr, tool.Bin + " not found — install it"}}, nil, 0
 		m.jobDisplay = tool.Name
 		return nil
 	}
@@ -526,7 +531,7 @@ func (m *model) launchTool(tool Tool) tea.Cmd {
 	j, cmd, err := startTool(m.ctx, m.generation, id, tool.Bin, args, env, tool.Timeout)
 	if err != nil {
 		m.jobName, m.jobToolKey, m.jobStatus = tool.Name, tool.Key, JobFailed
-		m.jobLines, m.jobDisplay = []outLine{{StreamStderr, textsafe.Clean(err.Error())}}, display
+		m.jobLines, m.jobDisplay, m.jobDur = []outLine{{StreamStderr, textsafe.Clean(err.Error())}}, display, 0
 		return nil
 	}
 	m.activeJob, m.jobStatus = j, JobRunning
@@ -740,7 +745,7 @@ func (m model) View() string {
 
 	header := m.headerView()
 	body := m.bodyView(deferred)
-	help := m.helpView(deferred, false)
+	help := m.helpView(deferred)
 	if m.entering {
 		help = m.promptView()
 	}
@@ -752,10 +757,6 @@ func (m model) View() string {
 	// Adaptive tail: the job pane gets whatever height the rest doesn't use.
 	used := strings.Count(top, "\n") + strings.Count(body, "\n") + strings.Count(toolbox, "\n") + strings.Count(help, "\n") + 2
 	avail := m.height - used
-	// The hint chip adds no newline, so recomputing help can't change avail.
-	if !m.entering && m.confirmTool == nil && m.jobClipped(avail) {
-		help = m.helpView(deferred, true)
-	}
 	return top + body + "\n" + toolbox + "\n" + m.jobView(avail) + help + "\n"
 }
 
@@ -778,7 +779,7 @@ func (m model) bodyView(deferred bool) string {
 	left.WriteString(panelTitleStyle.Render("Checks") + "\n")
 	for i, probe := range m.probes {
 		if deferred {
-			left.WriteString(faintStyle.Render("· "+probe.Name) + "\n")
+			left.WriteString(faintStyle.Render("  · "+probe.Name) + "\n")
 			continue
 		}
 		marker, name := "  ", probe.Name
@@ -833,14 +834,39 @@ func (m model) bodyView(deferred bool) string {
 		panelStyle.Width(rightW).Height(h).Render(rightStr))
 }
 
+// joinChips joins styled chips with sep, wrapping to width only at chip
+// boundaries so a "[k] label" pair is never split mid-word.
+func joinChips(width int, sep string, chips []string) string {
+	if width <= 0 {
+		width = 80
+	}
+	var lines []string
+	cur := ""
+	for _, c := range chips {
+		switch {
+		case cur == "":
+			cur = c
+		case lipgloss.Width(cur)+lipgloss.Width(sep)+lipgloss.Width(c) <= width:
+			cur += sep + c
+		default:
+			lines = append(lines, cur)
+			cur = c
+		}
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	return strings.Join(lines, "\n")
+}
+
 // helpKeys renders key/description pairs as a dim help bar with the keys
-// highlighted, e.g. "r restart  ·  q quit".
-func helpKeys(kv ...string) string {
+// highlighted, e.g. "r restart  ·  q quit", wrapped at pair boundaries.
+func helpKeys(width int, kv ...string) string {
 	parts := make([]string, 0, len(kv)/2)
 	for i := 0; i+1 < len(kv); i += 2 {
 		parts = append(parts, keyStyle.Render(kv[i])+" "+faintStyle.Render(kv[i+1]))
 	}
-	return strings.Join(parts, faintStyle.Render("  ·  "))
+	return joinChips(width, faintStyle.Render("  ·  "), parts)
 }
 
 // confirmView replaces the help bar with the pending advanced tool's exact
@@ -851,7 +877,7 @@ func (m model) confirmView() string {
 		faintStyle.Render("Actively scans "+m.target.Host+" — may trip its intrusion detection.") + "\n" +
 		"$ " + display
 	w := max(min(m.width-2, 76), 24)
-	return panelStyle.Width(w).Render(body) + "\n" + helpKeys("y", "run", "esc", "cancel")
+	return focusPanelStyle.Width(w).Render(body) + "\n" + helpKeys(m.width, "y", "run", "any other key", "cancel")
 }
 
 // promptView is the rerun prompt panel, shown in place of the help bar.
@@ -861,19 +887,25 @@ func (m model) promptView() string {
 		body += "\n" + failStyle.Render("✗ "+m.inputErr)
 	}
 	w := max(min(m.width-2, 76), 24)
-	return panelStyle.Width(w).Render(body) + "\n" + helpKeys("enter", "run", "esc", "back")
+	return focusPanelStyle.Width(w).Render(body) + "\n" + helpKeys(m.width, "enter", "run", "esc", "back")
 }
 
-func (m model) helpView(deferred, clipped bool) string {
+func (m model) helpView(deferred bool) string {
+	// Enter opens the output viewer whenever a job pane exists (same condition
+	// as jobView), so the hint tracks exactly when the key does something.
+	hasJob := m.activeJob != nil || m.jobStatus != JobQueued
 	if deferred {
 		kv := []string{"r", "run the checks"}
 		if len(m.tools) > 0 {
 			kv = append(kv, "letter", "runs that tool")
 		}
-		return helpKeys(append(kv, "q", "quit")...)
+		if hasJob {
+			kv = append(kv, "enter", "full output")
+		}
+		return helpKeys(m.width, append(kv, "q", "quit")...)
 	}
 	kv := []string{"↑/↓", "pick a check"}
-	if clipped {
+	if hasJob {
 		kv = append(kv, "enter", "full output")
 	}
 	if m.fixTool() != nil && !m.fixing {
@@ -883,9 +915,13 @@ func (m model) helpView(deferred, clipped bool) string {
 		kv = append(kv, "y", "copy report", "w", "save report")
 	}
 	kv = append(kv, "r", "restart", "q", "quit")
-	help := helpKeys(kv...)
+	help := helpKeys(m.width, kv...)
 	if m.notice != "" {
-		help = faintStyle.Render(m.notice) + "\n" + help
+		n := failStyle.Render("✗ " + m.notice)
+		if m.noticeOK {
+			n = passStyle.Render("✓ " + m.notice)
+		}
+		help = n + "\n" + help
 	}
 	return help
 }
@@ -1013,18 +1049,28 @@ func styledStatus(s JobStatus) string {
 	return s.String()
 }
 
+// jobStatusLine is the "name — status" line shared by the job pane and the
+// output viewer: a live spinner + timer while running, the total duration
+// once the job has finished.
+func (m model) jobStatusLine() string {
+	s := faintStyle.Render(m.jobName+" — ") + styledStatus(m.jobStatus)
+	if m.activeJob != nil {
+		return s + " " + m.spinner.View() + faintStyle.Render(fmt.Sprintf(" %.0fs", time.Since(m.jobStart).Seconds()))
+	}
+	if m.jobDur >= time.Second {
+		s += faintStyle.Render(fmt.Sprintf(" · %.0fs", m.jobDur.Seconds()))
+	}
+	return s
+}
+
 // outputView is the full-screen scrollable output viewer (Enter).
 func (m model) outputView() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("$ "+m.jobDisplay) + "\n")
-	status := faintStyle.Render(m.jobName+" — ") + styledStatus(m.jobStatus)
-	if m.activeJob != nil {
-		status += " " + m.spinner.View() + faintStyle.Render(fmt.Sprintf(" %.0fs", time.Since(m.jobStart).Seconds()))
-	}
-	b.WriteString(status + "\n")
+	b.WriteString(m.jobStatusLine() + "\n")
 	b.WriteString(m.vp.View() + "\n")
 	b.WriteString(faintStyle.Render(m.vpContext()) + "\n")
-	b.WriteString(helpKeys("↑/↓", "scroll", "esc", "back", "q", "quit"))
+	b.WriteString(helpKeys(m.width, "↑/↓", "scroll", "pgup/pgdn", "page", "esc", "back", "q", "quit"))
 	return b.String()
 }
 
@@ -1095,8 +1141,10 @@ func (m model) toolboxView() string {
 			parts[i] = faintStyle.Render("[" + t.Key + "] " + purpose + " — " + t.Bin + " missing")
 		}
 	}
-	line := titleStyle.Render("Dig deeper") + "  " + strings.Join(parts, faintStyle.Render("  ·  "))
-	return lipgloss.NewStyle().Width(m.vpWidth()).Render(line) + "\n"
+	// The title rides on the first chip so line 1's width math includes it;
+	// wrapping happens only between chips, never inside one.
+	parts[0] = titleStyle.Render("Dig deeper") + "  " + parts[0]
+	return joinChips(m.vpWidth(), faintStyle.Render("  ·  "), parts) + "\n"
 }
 
 // jobTailN is how many output lines the job pane can show given avail height;
@@ -1105,23 +1153,11 @@ func (m model) jobTailN(avail int) int {
 	tailN := jobTailLines
 	if m.height > 0 {
 		overhead := 5 // rule, title, status, context note, trailing blank
-		if len(m.facts) > 0 {
-			overhead += 1 + len(m.facts)
-		}
 		if tailN = avail - overhead; tailN < 3 {
 			tailN = 3
 		}
 	}
 	return tailN
-}
-
-// jobClipped reports whether the job pane can't show all the output, so the
-// "enter — full output" hint only appears when it actually adds something.
-func (m model) jobClipped(avail int) bool {
-	if m.activeJob == nil && m.jobStatus == JobQueued {
-		return false
-	}
-	return len(m.jobLines) > m.jobTailN(avail) || m.jobEvicted > 0 || m.jobDropped > 0
 }
 
 // jobView renders the job pane with an adaptive tail: avail is the screen
@@ -1134,11 +1170,7 @@ func (m model) jobView(avail int) string {
 	var b strings.Builder
 	b.WriteString(faintStyle.Render(strings.Repeat("─", m.vpWidth())) + "\n")
 	b.WriteString(titleStyle.Render("$ "+m.jobDisplay) + "\n")
-	status := faintStyle.Render(m.jobName+" — ") + styledStatus(m.jobStatus)
-	if m.activeJob != nil {
-		status += " " + m.spinner.View() + faintStyle.Render(fmt.Sprintf(" %.0fs", time.Since(m.jobStart).Seconds()))
-	}
-	b.WriteString(status + "\n")
+	b.WriteString(m.jobStatusLine() + "\n")
 
 	shown := m.jobLines
 	if len(shown) > tailN {
@@ -1149,12 +1181,6 @@ func (m model) jobView(avail int) string {
 			b.WriteString(faintStyle.Render("! "+ln.text) + "\n")
 		} else {
 			b.WriteString(ln.text + "\n")
-		}
-	}
-	if len(m.facts) > 0 {
-		b.WriteString(titleStyle.Render("Key facts") + "\n")
-		for _, f := range m.facts {
-			b.WriteString("  " + faintStyle.Render(f.Key+":") + " " + f.Value + "\n")
 		}
 	}
 	older := len(m.jobLines) - len(shown) + m.jobEvicted
