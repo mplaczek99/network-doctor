@@ -49,6 +49,36 @@ func TestSkipPropagation(t *testing.T) {
 	}
 }
 
+// When the last real probe result arrives and the run only completes via the
+// skip cascade inside scheduleStep, DowngradeEgress must still run — otherwise
+// a proxy-only network shows internet FAIL in the TUI but WARN in -json.
+func TestDowngradeRunsWhenSkipsFinishRun(t *testing.T) {
+	m := newModel(mustTarget(t, "github.com:443"))
+	pass := func(id diagnostic.ProbeID) {
+		m.results[id] = diagnostic.ProbeResult{ID: id, Status: diagnostic.StatusPass}
+		m.started[id] = true
+	}
+	fail := func(id diagnostic.ProbeID) {
+		m.results[id] = diagnostic.ProbeResult{ID: id, Status: diagnostic.StatusFail}
+		m.started[id] = true
+	}
+	pass(diagnostic.ProbeIface)
+	fail(diagnostic.ProbeInternet)
+	pass(diagnostic.ProbeProxy)
+	pass(diagnostic.ProbeDNS)
+	fail(diagnostic.ProbeHTTP)
+	m.started[diagnostic.ProbeTargetTCP] = true // in flight; its done-msg arrives below
+
+	u, _ := m.Update(probeDoneMsg{id: diagnostic.ProbeTargetTCP, gen: 0, res: diagnostic.ProbeResult{Status: diagnostic.StatusFail}})
+	nm := asModel(t, u)
+	if !nm.allDone() {
+		t.Fatal("run should complete via the tls/https skip cascade")
+	}
+	if got := nm.results[diagnostic.ProbeInternet].Status; got != diagnostic.StatusWarn {
+		t.Fatalf("internet = %v, want Warn (proxy works, egress downgraded)", got)
+	}
+}
+
 func TestNADoesNotBlock(t *testing.T) {
 	m := newModel(mustTarget(t, "1.1.1.1"))
 	m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{Status: diagnostic.StatusPass}

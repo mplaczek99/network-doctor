@@ -234,10 +234,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		res := msg.res
 		res.ID = msg.id
 		m.results[msg.id] = res
+		// scheduleStep first: it records skip results synchronously, which can
+		// be what completes the run.
+		cmds := m.scheduleStep()
 		if m.allDone() {
 			diagnostic.DowngradeEgress(m.results)
 		}
-		return m, tea.Batch(m.scheduleStep()...)
+		return m, tea.Batch(cmds...)
 
 	case ToolOutputMsg:
 		if m.activeJob == nil || msg.Generation != m.generation || msg.JobID != m.activeJob.id {
