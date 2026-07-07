@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -474,7 +476,11 @@ func TestLaunchToolStartErrorClearsPreviousJobState(t *testing.T) {
 	m.facts = []Fact{{"http_code", "200"}}
 	m.jobDropped = 7
 	m.jobEvicted = 9
-	bin := t.TempDir() + "/bad-tool"
+	name := "bad-tool"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	bin := filepath.Join(t.TempDir(), name)
 	if err := os.WriteFile(bin, []byte("not an executable format"), 0755); err != nil {
 		t.Fatal(err)
 	}
