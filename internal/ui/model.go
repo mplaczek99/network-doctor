@@ -521,7 +521,8 @@ func (m *model) doRerun() tea.Cmd {
 func (m *model) launchTool(tool Tool) tea.Cmd {
 	if !tool.Available() {
 		m.jobName, m.jobToolKey, m.jobStatus = tool.Name, tool.Key, JobFailed
-		m.jobLines, m.facts, m.jobDur = []outLine{{StreamStderr, tool.Bin + " not found — install it"}}, nil, 0
+		m.jobLines, m.facts, m.jobDropped, m.jobEvicted = []outLine{{StreamStderr, tool.Bin + " not found — install it"}}, nil, 0, 0
+		m.jobDur = 0
 		m.jobDisplay = tool.Name
 		return nil
 	}
@@ -536,7 +537,8 @@ func (m *model) launchTool(tool Tool) tea.Cmd {
 	j, cmd, err := startTool(m.ctx, m.generation, id, tool.Bin, args, env, tool.Timeout)
 	if err != nil {
 		m.jobName, m.jobToolKey, m.jobStatus = tool.Name, tool.Key, JobFailed
-		m.jobLines, m.jobDisplay, m.jobDur = []outLine{{StreamStderr, textsafe.Clean(err.Error())}}, display, 0
+		m.jobLines, m.facts, m.jobDropped, m.jobEvicted = []outLine{{StreamStderr, textsafe.Clean(err.Error())}}, nil, 0, 0
+		m.jobDisplay, m.jobDur = display, 0
 		return nil
 	}
 	m.activeJob, m.jobStatus = j, JobRunning

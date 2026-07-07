@@ -444,6 +444,9 @@ func TestToolboxLaunchBeforeRun(t *testing.T) {
 // launchTool on a missing binary fails gracefully with an install hint and no cmd.
 func TestLaunchToolUnavailable(t *testing.T) {
 	m := newModel(nil)
+	m.facts = []Fact{{"http_code", "200"}}
+	m.jobDropped = 7
+	m.jobEvicted = 9
 	tool := Tool{
 		Key: "z", Name: "nope", Bin: "network-doctor-no-such-binary-xyz",
 		Build: func(*diagnostic.Target) ([]string, []string, string) { return nil, nil, "nope" },
@@ -457,6 +460,46 @@ func TestLaunchToolUnavailable(t *testing.T) {
 	}
 	if len(m.jobLines) == 0 || m.jobLines[0].stream != StreamStderr || !strings.Contains(m.jobLines[0].text, "not found") {
 		t.Errorf("jobLines = %v, want a stderr 'not found' hint", m.jobLines)
+	}
+	if m.facts != nil {
+		t.Errorf("facts = %v, want nil", m.facts)
+	}
+	if m.jobDropped != 0 || m.jobEvicted != 0 {
+		t.Errorf("jobDropped/jobEvicted = %d/%d, want 0/0", m.jobDropped, m.jobEvicted)
+	}
+}
+
+func TestLaunchToolStartErrorClearsPreviousJobState(t *testing.T) {
+	m := newModel(nil)
+	m.facts = []Fact{{"http_code", "200"}}
+	m.jobDropped = 7
+	m.jobEvicted = 9
+	bin := t.TempDir() + "/bad-tool"
+	if err := os.WriteFile(bin, []byte("not an executable format"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	tool := Tool{
+		Key: "z", Name: "bad tool", Bin: bin,
+		Build: func(*diagnostic.Target) ([]string, []string, string) { return nil, nil, "bad-tool --display" },
+	}
+	cmd := (&m).launchTool(tool)
+	if cmd != nil {
+		t.Error("a start error must not return a running job command")
+	}
+	if m.jobStatus != JobFailed {
+		t.Errorf("status = %v, want JobFailed", m.jobStatus)
+	}
+	if m.jobDisplay != "bad-tool --display" {
+		t.Errorf("jobDisplay = %q, want built display string", m.jobDisplay)
+	}
+	if len(m.jobLines) == 0 || m.jobLines[0].stream != StreamStderr {
+		t.Errorf("jobLines = %v, want a stderr error line", m.jobLines)
+	}
+	if m.facts != nil {
+		t.Errorf("facts = %v, want nil", m.facts)
+	}
+	if m.jobDropped != 0 || m.jobEvicted != 0 {
+		t.Errorf("jobDropped/jobEvicted = %d/%d, want 0/0", m.jobDropped, m.jobEvicted)
 	}
 }
 
