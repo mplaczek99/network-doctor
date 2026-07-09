@@ -74,7 +74,12 @@ type ToolDoneMsg struct {
 }
 
 const (
-	toolTimeout  = 12 * time.Second
+	// toolTimeout is the default job budget; genuinely slow tools (pathping,
+	// nmap) bring their own via Tool.Timeout.
+	toolTimeout = 12 * time.Second
+	// chanBuf absorbs output bursts between Update reads. A tool that
+	// out-talks the UI anyway gets its excess dropped and counted (Dropped) —
+	// the UI never blocks to spare a chatty subprocess's feelings.
 	chanBuf      = 256
 	maxLineBytes = 4096
 )

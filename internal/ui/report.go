@@ -23,6 +23,8 @@ func exportReport(rep string, save bool) (notice string, ok bool) {
 		}
 		return "report saved to " + name, true
 	}
+	// stderr, because Bubble Tea owns stdout: both reach the tty, but only one
+	// of them is fighting the renderer for it mid-frame.
 	if _, err := fmt.Fprintf(os.Stderr, "\x1b]52;c;%s\x07", base64.StdEncoding.EncodeToString([]byte(rep))); err != nil {
 		return "copy failed: " + err.Error(), false
 	}

@@ -164,6 +164,9 @@ func curlTool(host, goos string) Tool {
 			if t.PortExplicit {
 				url += ":" + strconv.Itoa(t.Port)
 			}
+			// -q is load-bearing and must come first: it stops curl from
+			// reading ~/.curlrc, whose surprises (a proxy, extra -w output)
+			// would otherwise sabotage the write-out line extractFacts parses.
 			args := []string{
 				"-q", "-sS", "--head", "-o", devNull,
 				"--max-redirs", "0", "--noproxy", "*",

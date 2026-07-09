@@ -148,7 +148,7 @@ func ParseTarget(raw string) (*Target, error) {
 		t.Proto = ProtoHTTP
 	default:
 		switch t.Port {
-		case 443, 8443:
+		case 443, 8443: // 8443: where HTTPS admin panels go to feel special
 			t.Proto = ProtoTLSHTTP
 		case 80:
 			t.Proto = ProtoHTTP

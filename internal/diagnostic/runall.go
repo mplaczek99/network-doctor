@@ -12,6 +12,9 @@ func RunAll(ctx context.Context, probes []Probe) map[ProbeID]ProbeResult {
 	done := make(chan ProbeResult)
 	running := 0
 
+	// Yes, this re-implements the ui scheduler's ready/blocked walk. No, don't
+	// unify them: ui imports diagnostic, so sharing these ten lines means a
+	// third package or an import cycle — steep rent for a DAG of ~10 nodes.
 	schedule := func() {
 		for progress := true; progress; {
 			progress = false

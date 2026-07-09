@@ -236,6 +236,11 @@ func (o *netops) ifaceProbe(ctx context.Context, _ map[ProbeID]ProbeResult) Prob
 		r.Detail, r.Fix = "cannot list interfaces: "+err.Error(), "check permissions / network stack"
 		return r
 	}
+	// First up-and-running non-loopback interface wins — that's kernel
+	// enumeration order, not the routing table's opinion. With Wi-Fi and
+	// Ethernet both up this may name the one traffic doesn't use; that's fine,
+	// this probe only proves "a link is alive". The egress probes report the
+	// interface packets actually take (pathIdentity).
 	for _, ifi := range ifaces {
 		if ifi.Flags&net.FlagLoopback != 0 {
 			continue
@@ -379,6 +384,7 @@ func (o *netops) proxyProbe(ctx context.Context, _ map[ProbeID]ProbeResult) Prob
 		r.Detail = "proxy write failed: " + textsafe.Clean(err.Error())
 		return r
 	}
+	// net.Conn reads don't know ctx exists; the read deadline is the only leash.
 	conn.SetReadDeadline(time.Now().Add(remaining(ctx)))
 	// Bounded read: the response is attacker-controlled.
 	resp, err := http.ReadResponse(bufio.NewReader(io.LimitReader(conn, 4096)), &http.Request{Method: http.MethodConnect})
@@ -562,6 +568,9 @@ func (o *netops) bannerProbe(id ProbeID, label string, port int) Probe {
 			return r
 		}
 		defer conn.Close()
+		// Flat 2s rather than the whole probe budget: a banner arrives
+		// immediately or (shy server) never — waiting longer only delays the
+		// Warn. Deadline, not ctx: net.Conn reads don't honor ctx.
 		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		// Strict byte limit: a hostile server streaming without a newline can't
 		// exhaust memory.

@@ -21,5 +21,7 @@ func killGroup(cmd *exec.Cmd) error {
 	if pgid, err := syscall.Getpgid(cmd.Process.Pid); err == nil {
 		return syscall.Kill(-pgid, syscall.SIGKILL)
 	}
+	// Getpgid failed — the leader is likely already dead/reaped. Plain Kill as
+	// a consolation prize; any surviving grandchildren get adopted by init.
 	return cmd.Process.Kill()
 }

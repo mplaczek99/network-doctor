@@ -47,8 +47,8 @@ type pendingAction struct {
 }
 
 const (
-	maxJobLines  = 5000
-	jobTailLines = 14 // main-screen tail fallback when the terminal height is unknown
+	maxJobLines  = 5000 // ring-buffer cap: older lines become a "discarded" count, not a memory bill
+	jobTailLines = 14   // main-screen tail fallback when the terminal height is unknown
 )
 
 // outLine is one captured output line tagged with its source stream. Lines are
@@ -157,7 +157,7 @@ func newModel(t *diagnostic.Target) model {
 		tools:     toolsFor(t, runtime.GOOS),
 		jobStatus: JobQueued,
 		spinner:   sp,
-		width:     100,
+		width:     100, // placeholder until the terminal introduces itself (WindowSizeMsg)
 	}
 }
 
@@ -233,7 +233,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil // stale rerun
 		}
 		res := msg.res
-		res.ID = msg.id
+		res.ID = msg.id // scheduler identity wins over whatever the probe wrote on its own name tag
 		m.results[msg.id] = res
 		// scheduleStep first: it records skip results synchronously, which can
 		// be what completes the run.
