@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -770,11 +772,17 @@ func (m model) View() string {
 	return fixed + m.jobView(avail) + tail
 }
 
+// targetHP is the target endpoint as host:port; JoinHostPort brackets IPv6
+// literals so the rendered endpoint reads back as the same target.
+func (m model) targetHP() string {
+	return net.JoinHostPort(m.target.Host, strconv.Itoa(m.target.Port))
+}
+
 // headerView is the one-line masthead: app name, target, connected network.
 func (m model) headerView() string {
 	h := selStyle.Render("◆ ") + titleStyle.Render("Network Doctor")
 	if m.target != nil {
-		h += faintStyle.Render(fmt.Sprintf("  %s:%d", m.target.Host, m.target.Port))
+		h += faintStyle.Render("  " + m.targetHP())
 	}
 	if n := m.networkLine(); n != "" {
 		h += faintStyle.Render("  ·  " + n)
@@ -974,7 +982,7 @@ func (m model) banner() string {
 		if summary == "" {
 			summary = "All checks passed — no problems found."
 			if m.target != nil {
-				summary = fmt.Sprintf("All checks passed — %s:%d looks healthy.", m.target.Host, m.target.Port)
+				summary = "All checks passed — " + m.targetHP() + " looks healthy."
 			}
 		}
 		if m.verifying {

@@ -50,6 +50,20 @@ func TestReportSanitized(t *testing.T) {
 	}
 }
 
+func TestReportBracketsIPv6(t *testing.T) {
+	tgt, err := diagnostic.ParseTarget("[2001:db8::1]:443")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newModel(tgt)
+	for _, p := range m.probes {
+		m.results[p.ID] = diagnostic.ProbeResult{ID: p.ID, Status: diagnostic.StatusPass}
+	}
+	if rep := m.report(); !strings.Contains(rep, "target: [2001:db8::1]:443") {
+		t.Errorf("IPv6 target not bracketed:\n%s", rep)
+	}
+}
+
 func TestReportVerdictPass(t *testing.T) {
 	m := newModel(nil)
 	for _, p := range m.probes {

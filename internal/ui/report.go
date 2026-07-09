@@ -39,7 +39,7 @@ func (m model) report() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "network-doctor report — %s\n", time.Now().UTC().Format(time.RFC3339))
 	if m.target != nil {
-		fmt.Fprintf(&b, "target: %s:%d (%s)\n", m.target.Host, m.target.Port, m.target.Proto)
+		fmt.Fprintf(&b, "target: %s (%s)\n", m.targetHP(), m.target.Proto)
 	} else {
 		b.WriteString("target: none — general connection check\n")
 	}
