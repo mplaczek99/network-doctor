@@ -1,4 +1,4 @@
-# network-doctor
+# Network Doctor
 
 A terminal UI that diagnoses your network connectivity and tells you **where the
 connection breaks** in plain English — not just a wall of tool output.
@@ -29,7 +29,7 @@ Checks                        Details — DNS github.com
 
 Dig deeper: [i] route table · [s] open sockets · [p] ping the host · [d] DNS lookup · …
 
-↑/↓ pick a check · r run again · q quit
+↑/↓ pick a check · r restart · q quit
 ```
 
 ## How it diagnoses
@@ -47,8 +47,10 @@ failure never hides a working one:
 - **Selected target path**: `Interface → DNS → TCP → TLS → HTTPS` for secure
   web targets, or the applicable protocol row for other ports.
 
-Each row is one of four states: **✓ Pass**, **✗ Fail**, **⊘ Skip** (a
-prerequisite failed), or **– N/A** (doesn't apply — e.g. DNS on an IP literal).
+Each row is one of five states: **✓ Pass**, **! Warn** (reachable but degraded —
+high latency, some addresses failing, ambiguous source interface), **✗ Fail**,
+**⊘ Skip** (a prerequisite failed), or **– N/A** (doesn't apply — e.g. DNS on an
+IP literal). A Warn never counts as a failure.
 
 | Probe | Passes when | Notes |
 |-------|-------------|-------|
@@ -71,21 +73,35 @@ is bounded by a 4-second timeout.
 
 Runs on **Linux, macOS, and Windows**.
 
-On macOS, install with Homebrew — this avoids Gatekeeper's
-"unverified developer" prompt:
+### Arch Linux (AUR)
+
+The [`network-doctor`](https://aur.archlinux.org/packages/network-doctor)
+package builds from source:
+
+```sh
+yay -S network-doctor    # or: paru -S network-doctor
+```
+
+Or by hand, without an AUR helper:
+
+```sh
+git clone https://aur.archlinux.org/network-doctor.git
+cd network-doctor
+makepkg -si
+```
+
+### macOS (Homebrew)
+
+Installing with Homebrew avoids Gatekeeper's "unverified developer" prompt:
 
 ```sh
 brew tap mplaczek99/tap
 brew install --cask network-doctor
 ```
 
-On Arch Linux, from the [AUR](https://aur.archlinux.org/packages/network-doctor):
+### Everywhere else
 
-```sh
-yay -S network-doctor   # or paru — builds from source
-```
-
-Or download a prebuilt binary from the [latest release](https://github.com/mplaczek99/network-doctor/releases/latest), or install with Go 1.26+:
+Download a prebuilt binary from the [latest release](https://github.com/mplaczek99/network-doctor/releases/latest), or install with Go 1.26+:
 
 ```sh
 go install github.com/mplaczek99/network-doctor@latest
@@ -111,6 +127,10 @@ network-doctor https://host:80  # explicit scheme selects the protocol (→ TLS 
 network-doctor --json host      # headless: one JSON report on stdout (scripts, CI, bug reports)
 ```
 
+`--timeout` overrides the per-check probe timeout, and `--egress` replaces the
+IP list used by the direct-egress check; see `network-doctor --help` for the
+defaults.
+
 The target parser has two independent axes: the **port** (explicit `:port` >
 scheme default > 443) and the **protocol rows** (an explicit `http`/`https`
 scheme wins; otherwise inferred from the port — `443/8443`→HTTP+TLS+HTTPS, `80`→HTTP,
@@ -120,9 +140,11 @@ literals are accepted bare (`::1`) or bracketed with a port (`[::1]:443`).
 | Key | Action |
 |-----|--------|
 | `↑`/`↓` (`k`/`j`) | select a probe row |
-| `r` | rerun — opens a prompt to edit the `network-doctor` arguments (`enter` runs, `esc` backs out) |
+| `enter` | open the current tool job's output in a scrollable full-screen viewer |
+| `r` | restart — opens a prompt to edit the `network-doctor` arguments (`enter` runs, `esc` backs out) |
 | `f` | try an automatic fix for the first failed check, then rerun the chain to verify |
-| `q` / `Ctrl-C` | quit |
+| `y` / `w` | yank / write (save / write) a report of the chain plus the completed tool output |
+| `q` | quit |
 
 **Auto-fix** (`f`, experimental): runs a mild, OS-specific remedy through the
 same job pipeline as the drill-down tools — flush the DNS cache
@@ -156,6 +178,12 @@ The same hotkeys map to each OS's built-in tools:
 | `c` (SMTP target) | `openssl s_client -starttls smtp` | same | same |
 | `t` | `traceroute -w 2 -q 1 -m 20` | same | `tracert -w 2000 -h 20` |
 | `m` | `mtr --report --report-cycles 5` | same (via brew) | `pathping -h 20 -q 5 -p 100 -w 500` (own 90 s budget) |
+| `n` | `nmap -sT -T2 -Pn` (the explicit target port, else top 100) | same | same |
+
+`n` is the one tool that actively scans the target, so it's gated behind an
+explicit confirmation showing the exact command before anything runs. It uses
+a plain connect scan (no raw sockets, no root) with polite timing and no
+version/OS detection — just enough to answer "is the port open?".
 
 The `c` slot is protocol-aware: HTTP(S) and unknown-port targets get `curl`,
 while SSH (port 22) and SMTP (ports 25/587) targets get a protocol-appropriate
@@ -227,14 +255,13 @@ Windows only. Everything load-bearing (route table cells, the untranslated
 
 ## Roadmap
 
-Implemented: native DAG probes + diagnosis engine + two-pane UI (Phase 1),
-cancellable streaming tool jobs with `ping`/`dig`/`curl` (Phase 2),
-`traceroute`/`mtr`/`ss`/`ip` + a scrollable output viewport + `--toolbox` mode
-(Phase 3), and an experimental `f` auto-fix-and-verify hotkey.
+Implemented: native DAG probes + diagnosis engine + two-pane UI, cancellable
+streaming tool jobs (`ping`/`dig`/`curl`/`traceroute`/`mtr`/`ss`/`ip`/`nmap`) +
+a scrollable output viewer + `--toolbox` mode, the `Warn` state, proxy-aware
+diagnosis, `--json` output, report copy/save, and an experimental `f`
+auto-fix-and-verify hotkey.
 
-Still to come (see `BACKLOG.md` for the full ordered list): dependency-injected
-probes for deterministic tests, a `Warn` state, proxy-aware diagnosis,
-mtr-parsed route quality, `--json` output, multiple concurrent jobs, and `nmap`.
+Still to come: mtr-parsed route quality and multiple concurrent jobs.
 
 ## Built with
 
