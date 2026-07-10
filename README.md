@@ -143,7 +143,7 @@ literals are accepted bare (`::1`) or bracketed with a port (`[::1]:443`).
 | `enter` | open the current tool job's output in a scrollable full-screen viewer |
 | `r` | restart — opens a prompt to edit the `network-doctor` arguments (`enter` runs, `esc` backs out) |
 | `f` | try an automatic fix for the first failed check, then rerun the chain to verify |
-| `y` / `w` | yank / write (save / write) a report of the chain plus the completed tool output |
+| `y` / `w` | yank / write (copy / save) a report of the chain plus the completed tool output |
 | `q` | quit |
 
 **Auto-fix** (`f`, experimental): runs a mild, OS-specific remedy through the
