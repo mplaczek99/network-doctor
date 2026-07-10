@@ -26,3 +26,11 @@ jobs:
       # The job runner does concurrent subprocess cancellation; gate it.
       - if: runner.os == 'Linux'
         run: go test -race ./...
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v9

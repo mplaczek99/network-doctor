@@ -11,4 +11,5 @@ graphify-out/
 .codex/
 .claude/
 CLAUDE.md
+CLAUDE.local.md
 AGENTS.md

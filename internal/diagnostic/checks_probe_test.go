@@ -225,7 +225,7 @@ func TestHTTPProbeHeaderLimit(t *testing.T) {
 				}
 			}
 			// 128 KiB header, double the transport's 64 KiB cap.
-			server.Write([]byte("HTTP/1.1 200 OK\r\nX-Big: " + strings.Repeat("a", 128<<10) + "\r\n\r\n"))
+			_, _ = server.Write([]byte("HTTP/1.1 200 OK\r\nX-Big: " + strings.Repeat("a", 128<<10) + "\r\n\r\n"))
 		}()
 		return client, nil
 	}}
