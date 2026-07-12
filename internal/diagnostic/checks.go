@@ -127,11 +127,14 @@ const DefaultEgressList = "1.1.1.1,8.8.8.8,2606:4700:4700::1111,2001:4860:4860::
 // internetEndpoints4/6 are the ordered direct-egress endpoints per address
 // family; first connect wins within a family. Honestly "direct TCP egress" —
 // proxy-only networks can fail this.
-var internetEndpoints4, internetEndpoints6 = defaultEgressEndpoints()
+var internetEndpoints4, internetEndpoints6 = splitFamilies([]net.IP{
+	net.ParseIP("1.1.1.1"), net.ParseIP("8.8.8.8"),
+	net.ParseIP("2606:4700:4700::1111"), net.ParseIP("2001:4860:4860::8888"),
+})
 
-func defaultEgressEndpoints() (v4, v6 []net.IP) {
-	for _, s := range strings.Split(DefaultEgressList, ",") {
-		if ip := net.ParseIP(s); ip.To4() != nil {
+func splitFamilies(ips []net.IP) (v4, v6 []net.IP) {
+	for _, ip := range ips {
+		if ip.To4() != nil {
 			v4 = append(v4, ip)
 		} else {
 			v6 = append(v6, ip)
@@ -143,14 +146,7 @@ func defaultEgressEndpoints() (v4, v6 []net.IP) {
 // SetEgressEndpoints replaces the direct-egress probe targets, partitioned by
 // address family. A family with no endpoints is simply not probed.
 func SetEgressEndpoints(ips []net.IP) {
-	internetEndpoints4, internetEndpoints6 = nil, nil
-	for _, ip := range ips {
-		if ip.To4() != nil {
-			internetEndpoints4 = append(internetEndpoints4, ip)
-		} else {
-			internetEndpoints6 = append(internetEndpoints6, ip)
-		}
-	}
+	internetEndpoints4, internetEndpoints6 = splitFamilies(ips)
 }
 
 // netops holds every network/OS touchpoint the probes use, as function fields

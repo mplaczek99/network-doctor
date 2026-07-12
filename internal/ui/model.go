@@ -85,7 +85,6 @@ type model struct {
 	activeJob  *job
 	pending    *pendingAction
 	jobStatus  JobStatus
-	jobToolKey string
 	jobName    string
 	jobDisplay string
 	jobLines   []outLine
@@ -526,7 +525,7 @@ func (m *model) doRerun() tea.Cmd {
 
 func (m *model) launchTool(tool Tool) tea.Cmd {
 	if !tool.Available() {
-		m.jobName, m.jobToolKey, m.jobStatus = tool.Name, tool.Key, JobFailed
+		m.jobName, m.jobStatus = tool.Name, JobFailed
 		m.jobLines, m.jobDropped, m.jobEvicted = []outLine{{StreamStderr, tool.Bin + " not found — install it"}}, 0, 0
 		m.jobDur = 0
 		m.jobDisplay = tool.Name
@@ -542,7 +541,7 @@ func (m *model) launchTool(tool Tool) tea.Cmd {
 	}
 	j, cmd, err := startTool(m.ctx, m.generation, id, tool.Bin, args, env, tool.Timeout)
 	if err != nil {
-		m.jobName, m.jobToolKey, m.jobStatus = tool.Name, tool.Key, JobFailed
+		m.jobName, m.jobStatus = tool.Name, JobFailed
 		m.jobLines, m.jobDropped, m.jobEvicted = []outLine{{StreamStderr, textsafe.Clean(err.Error())}}, 0, 0
 		m.jobDisplay, m.jobDur = display, 0
 		return nil
@@ -552,7 +551,7 @@ func (m *model) launchTool(tool Tool) tea.Cmd {
 	if m.viewing {
 		m.refreshViewport()
 	}
-	m.jobName, m.jobToolKey, m.jobDisplay, m.jobStart = tool.Name, tool.Key, display, time.Now()
+	m.jobName, m.jobDisplay, m.jobStart = tool.Name, display, time.Now()
 	if !wasTicking {
 		return tea.Batch(cmd, m.spinner.Tick)
 	}
@@ -652,9 +651,6 @@ func (m model) stdoutLines() []string {
 // with a "! " marker. Line numbers in the context line refer to these wrapped
 // display lines.
 func (m model) jobContent(w int) string {
-	if w <= 0 {
-		w = 80
-	}
 	if len(m.jobLines) == 0 {
 		return lipgloss.NewStyle().Width(w).Render(faintStyle.Render("(no output yet)"))
 	}
