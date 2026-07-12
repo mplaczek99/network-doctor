@@ -393,7 +393,7 @@ func (m model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handled here scrolls the viewport; leaving the bottom disables follow mode.
 func (m model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "enter", "esc":
+	case "esc":
 		m.viewing = false
 		return m, nil
 	case "q":
@@ -920,7 +920,7 @@ func (m model) helpView(deferred bool) string {
 		}
 		return helpKeys(m.width, append(kv, "q", "quit")...)
 	}
-	kv := []string{"↑/↓", "pick a check"}
+	kv := []string{"↑/↓/j/k", "pick a check"}
 	if hasJob {
 		kv = append(kv, "enter", "full output")
 	}
@@ -1086,7 +1086,7 @@ func (m model) outputView() string {
 	b.WriteString(m.jobStatusLine() + "\n")
 	b.WriteString(m.vp.View() + "\n")
 	b.WriteString(faintStyle.Render(m.vpContext()) + "\n")
-	b.WriteString(helpKeys(m.width, "↑/↓", "scroll", "pgup/pgdn", "page", "esc", "back", "q", "quit"))
+	b.WriteString(helpKeys(m.width, "↑/↓/j/k", "scroll", "pgup/pgdn/b/f/space", "page", "u/d", "half page", "esc", "back", "q", "quit"))
 	return b.String()
 }
 
