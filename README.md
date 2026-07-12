@@ -161,9 +161,9 @@ been exercised against real broken networks on every OS yet.
 Each row in the diagnosis is *evidence*; when you want proof, run a real tool as
 a cancellable streaming job (one at a time). The contextual toolbox shows the
 tools available for the current target with their hotkeys — missing binaries are
-greyed out with an install hint. Output is bounded, sanitized (no terminal-escape
-injection from a hostile server), and a few stable facts are extracted on
-completion.
+greyed out with an install hint. Output is bounded and sanitized (no
+terminal-escape injection from a hostile server); the last 15 stdout lines are
+included in reports after a tool finishes.
 
 The same hotkeys map to each OS's built-in tools:
 
@@ -173,7 +173,7 @@ The same hotkeys map to each OS's built-in tools:
 | `s` | `ss -tunp` | `netstat -an -p tcp` | `netstat -ano` |
 | `p` | `ping -c 4 -W 2` | `ping -c 4` | `ping -n 4 -w 2000` |
 | `d` | `dig +time=2 +tries=1` | `dig +time=2 +tries=1` | `nslookup` |
-| `c` | `curl … -w '…'` (locale-proof facts) | same | `curl.exe` (bypasses the PowerShell 5.1 `curl` alias) |
+| `c` | `curl … -w '…'` (concise summary) | same | `curl.exe` (bypasses the PowerShell 5.1 `curl` alias) |
 | `c` (SSH target) | `ssh -v -o BatchMode=yes …` (bounded banner/handshake check) | same | same |
 | `c` (SMTP target) | `openssl s_client -starttls smtp` | same | same |
 | `t` | `traceroute -w 2 -q 1 -m 20` | same | `tracert -w 2000 -h 20` |

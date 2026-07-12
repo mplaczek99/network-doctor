@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"testing"
@@ -28,7 +29,14 @@ func TestReportSanitized(t *testing.T) {
 			{IP: net.ParseIP("93.184.216.34"), Dur: 12 * time.Millisecond, Err: errors.New("\x1b[2Jrefused")},
 		},
 	}
-	m.facts = []Fact{{"http_code", "200\x1b[31m"}}
+	for i := 0; i < 16; i++ {
+		m.jobLines = append(m.jobLines, outLine{StreamStdout, fmt.Sprintf("line %02d", i)})
+	}
+	m.jobLines = append(m.jobLines,
+		outLine{StreamStderr, "stderr must not be reported"},
+		outLine{StreamStdout, "result 200\x1b[31m"},
+	)
+	m.jobStatus = JobDone
 	m.jobDisplay = "curl https://example.com"
 
 	rep := m.report()
@@ -38,11 +46,18 @@ func TestReportSanitized(t *testing.T) {
 		"boom red",
 		"fix: restart it",
 		"attempt: 93.184.216.34 12ms refused",
-		"http_code: 200",
+		"tool output ($ curl https://example.com)",
+		"line 02",
+		"result 200",
 		"curl https://example.com",
 	} {
 		if !strings.Contains(rep, want) {
 			t.Errorf("report missing %q\n%s", want, rep)
+		}
+	}
+	for _, unwanted := range []string{"line 00", "line 01", "stderr must not be reported"} {
+		if strings.Contains(rep, unwanted) {
+			t.Errorf("report unexpectedly contains %q\n%s", unwanted, rep)
 		}
 	}
 	if strings.ContainsRune(rep, 0x1b) {

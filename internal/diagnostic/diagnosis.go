@@ -6,7 +6,7 @@ import (
 )
 
 // Diagnose computes the plain-English verdict from current-generation native
-// probe state only (tool facts never feed in). First-fail ordering + combination
+// probe state only (tool output never feeds in). First-fail ordering + combination
 // rules. Returns "Running diagnostics…" until every probe in order has a result.
 // A completed target with no failures returns an empty string because the
 // successful probe rows already communicate the outcome.

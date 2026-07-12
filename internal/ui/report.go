@@ -40,7 +40,7 @@ func exportReport(rep string, save bool) (notice string, ok bool) {
 
 // report renders the finished run as plain text safe to paste into a ticket
 // or chat: no ANSI styling, and every field that can carry external bytes
-// (probe details, attempt errors, SSIDs, tool facts) goes through
+// (probe details, attempt errors, SSIDs, tool output) goes through
 // textsafe.Clean.
 func (m model) report() string {
 	var b strings.Builder
@@ -71,10 +71,15 @@ func (m model) report() string {
 			fmt.Fprintf(&b, "        attempt: %s %dms %s\n", a.IP, a.Dur.Milliseconds(), st)
 		}
 	}
-	if len(m.facts) > 0 {
-		fmt.Fprintf(&b, "\ntool facts ($ %s):\n", textsafe.Clean(m.jobDisplay))
-		for _, f := range m.facts {
-			b.WriteString("  " + f.Key + ": " + textsafe.Clean(f.Value) + "\n")
+	stdout := m.stdoutLines()
+	if len(stdout) > 0 && (m.jobStatus == JobDone || m.jobStatus == JobFailed) {
+		const reportTailLines = 15
+		if len(stdout) > reportTailLines {
+			stdout = stdout[len(stdout)-reportTailLines:]
+		}
+		fmt.Fprintf(&b, "\ntool output ($ %s):\n", textsafe.Clean(m.jobDisplay))
+		for _, line := range stdout {
+			b.WriteString("  " + textsafe.Clean(line) + "\n")
 		}
 	}
 	return b.String()
@@ -83,20 +88,10 @@ func (m model) report() string {
 // verdictLine is the banner verdict without styling: PASS/WARN/FAIL plus the
 // diagnosis summary.
 func (m model) verdictLine() string {
-	order := make([]diagnostic.ProbeID, len(m.probes))
-	anyFail, anyWarn := false, false
-	for i, p := range m.probes {
-		order[i] = p.ID
-		switch m.results[p.ID].Status {
-		case diagnostic.StatusFail:
-			anyFail = true
-		case diagnostic.StatusWarn:
-			anyWarn = true
-		}
-	}
+	order, firstFail, anyWarn := m.resultState()
 	summary := diagnostic.Diagnose(m.target, order, m.results)
 	switch {
-	case anyFail:
+	case firstFail != nil:
 		if summary == "" {
 			summary = "a check failed"
 		}

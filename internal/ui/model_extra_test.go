@@ -162,15 +162,6 @@ func TestClassifyJob(t *testing.T) {
 	}
 }
 
-func TestExtractFactsNone(t *testing.T) {
-	if got := extractFacts("unknown-key", "linux", []string{"anything"}); got != nil {
-		t.Errorf("unknown tool key → %v, want nil", got)
-	}
-	if got := extractFacts("c", "linux", []string{"only three fields"}); got != nil {
-		t.Errorf("malformed curl line → %v, want nil", got)
-	}
-}
-
 // ---- tool construction ----
 
 // toolsFor builds the curl argv with the right URL (scheme + explicit port) and
@@ -446,7 +437,6 @@ func TestToolboxLaunchBeforeRun(t *testing.T) {
 // launchTool on a missing binary fails gracefully with an install hint and no cmd.
 func TestLaunchToolUnavailable(t *testing.T) {
 	m := newModel(nil)
-	m.facts = []Fact{{"http_code", "200"}}
 	m.jobDropped = 7
 	m.jobEvicted = 9
 	tool := Tool{
@@ -463,9 +453,6 @@ func TestLaunchToolUnavailable(t *testing.T) {
 	if len(m.jobLines) == 0 || m.jobLines[0].stream != StreamStderr || !strings.Contains(m.jobLines[0].text, "not found") {
 		t.Errorf("jobLines = %v, want a stderr 'not found' hint", m.jobLines)
 	}
-	if m.facts != nil {
-		t.Errorf("facts = %v, want nil", m.facts)
-	}
 	if m.jobDropped != 0 || m.jobEvicted != 0 {
 		t.Errorf("jobDropped/jobEvicted = %d/%d, want 0/0", m.jobDropped, m.jobEvicted)
 	}
@@ -473,7 +460,6 @@ func TestLaunchToolUnavailable(t *testing.T) {
 
 func TestLaunchToolStartErrorClearsPreviousJobState(t *testing.T) {
 	m := newModel(nil)
-	m.facts = []Fact{{"http_code", "200"}}
 	m.jobDropped = 7
 	m.jobEvicted = 9
 	name := "bad-tool"
@@ -500,9 +486,6 @@ func TestLaunchToolStartErrorClearsPreviousJobState(t *testing.T) {
 	}
 	if len(m.jobLines) == 0 || m.jobLines[0].stream != StreamStderr {
 		t.Errorf("jobLines = %v, want a stderr error line", m.jobLines)
-	}
-	if m.facts != nil {
-		t.Errorf("facts = %v, want nil", m.facts)
 	}
 	if m.jobDropped != 0 || m.jobEvicted != 0 {
 		t.Errorf("jobDropped/jobEvicted = %d/%d, want 0/0", m.jobDropped, m.jobEvicted)

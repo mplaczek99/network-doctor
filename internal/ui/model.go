@@ -93,7 +93,6 @@ type model struct {
 	jobEvicted int   // oldest lines evicted from the jobLines ring buffer
 	jobStart   time.Time
 	jobDur     time.Duration // total runtime of the last finished job
-	facts      []Fact
 
 	// Output viewport (Enter). follow sticks to the tail while output arrives;
 	// scrolling up turns it off, scrolling back to the bottom re-enables it.
@@ -265,7 +264,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.jobStatus, m.jobDropped, m.activeJob = msg.Status, msg.Dropped, nil
 		m.jobDur = time.Since(m.jobStart)
-		m.facts = extractFacts(m.jobToolKey, runtime.GOOS, m.stdoutLines())
 		if m.pending != nil {
 			p := m.pending
 			m.pending, m.fixing = nil, false // a deferred action overrides the fix flow
@@ -513,7 +511,7 @@ func (m *model) doRerun() tea.Cmd {
 	m.activeJob, m.pending = nil, nil
 	m.fixing, m.verifying = false, false
 	m.notice = ""
-	m.jobStatus, m.jobLines, m.facts, m.jobDropped, m.jobEvicted = JobQueued, nil, nil, 0, 0
+	m.jobStatus, m.jobLines, m.jobDropped, m.jobEvicted = JobQueued, nil, 0, 0
 	m.jobDur = 0
 	if m.viewing {
 		m.refreshViewport()
@@ -529,7 +527,7 @@ func (m *model) doRerun() tea.Cmd {
 func (m *model) launchTool(tool Tool) tea.Cmd {
 	if !tool.Available() {
 		m.jobName, m.jobToolKey, m.jobStatus = tool.Name, tool.Key, JobFailed
-		m.jobLines, m.facts, m.jobDropped, m.jobEvicted = []outLine{{StreamStderr, tool.Bin + " not found — install it"}}, nil, 0, 0
+		m.jobLines, m.jobDropped, m.jobEvicted = []outLine{{StreamStderr, tool.Bin + " not found — install it"}}, 0, 0
 		m.jobDur = 0
 		m.jobDisplay = tool.Name
 		return nil
@@ -545,12 +543,12 @@ func (m *model) launchTool(tool Tool) tea.Cmd {
 	j, cmd, err := startTool(m.ctx, m.generation, id, tool.Bin, args, env, tool.Timeout)
 	if err != nil {
 		m.jobName, m.jobToolKey, m.jobStatus = tool.Name, tool.Key, JobFailed
-		m.jobLines, m.facts, m.jobDropped, m.jobEvicted = []outLine{{StreamStderr, textsafe.Clean(err.Error())}}, nil, 0, 0
+		m.jobLines, m.jobDropped, m.jobEvicted = []outLine{{StreamStderr, textsafe.Clean(err.Error())}}, 0, 0
 		m.jobDisplay, m.jobDur = display, 0
 		return nil
 	}
 	m.activeJob, m.jobStatus = j, JobRunning
-	m.jobLines, m.facts, m.jobDropped, m.jobEvicted = nil, nil, 0, 0
+	m.jobLines, m.jobDropped, m.jobEvicted = nil, 0, 0
 	if m.viewing {
 		m.refreshViewport()
 	}
@@ -643,7 +641,7 @@ func (m *model) appendJobLine(s Stream, text string) {
 	}
 }
 
-// stdoutLines returns just the stdout side of the stream, for fact extraction.
+// stdoutLines returns just the stdout side of the captured job stream.
 func (m model) stdoutLines() []string {
 	var out []string
 	for _, ln := range m.jobLines {
@@ -962,18 +960,7 @@ func (m model) banner() string {
 		return m.spinner.View() + " Checking your connection… " +
 			progressBar(done, total, 20) + faintStyle.Render(fmt.Sprintf(" %d of %d done", done, total))
 	}
-	order := make([]diagnostic.ProbeID, len(m.probes))
-	var firstFail *diagnostic.ProbeResult
-	anyWarn := false
-	for i, probe := range m.probes {
-		order[i] = probe.ID
-		r := m.results[probe.ID]
-		if firstFail == nil && r.Status == diagnostic.StatusFail {
-			rr := r
-			firstFail = &rr
-		}
-		anyWarn = anyWarn || r.Status == diagnostic.StatusWarn
-	}
+	order, firstFail, anyWarn := m.resultState()
 	summary := diagnostic.Diagnose(m.target, order, m.results)
 	if firstFail == nil {
 		if anyWarn {
@@ -1014,6 +1001,22 @@ func (m model) banner() string {
 		lines = append(lines, "  "+next)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// resultState collects the ordered probe IDs and the severity flags shared by
+// the styled banner and plain-text report verdict.
+func (m model) resultState() (order []diagnostic.ProbeID, firstFail *diagnostic.ProbeResult, anyWarn bool) {
+	order = make([]diagnostic.ProbeID, len(m.probes))
+	for i, probe := range m.probes {
+		order[i] = probe.ID
+		r := m.results[probe.ID]
+		if firstFail == nil && r.Status == diagnostic.StatusFail {
+			rr := r
+			firstFail = &rr
+		}
+		anyWarn = anyWarn || r.Status == diagnostic.StatusWarn
+	}
+	return order, firstFail, anyWarn
 }
 
 // probeNextTool maps a failed probe to the toolbox hotkey that best
