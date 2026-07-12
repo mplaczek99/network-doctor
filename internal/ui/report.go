@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
+
 	"github.com/mplaczek99/network-doctor/internal/diagnostic"
 	"github.com/mplaczek99/network-doctor/internal/textsafe"
 )
@@ -22,6 +24,11 @@ func exportReport(rep string, save bool) (notice string, ok bool) {
 			return "save failed: " + err.Error(), false
 		}
 		return "report saved to " + name, true
+	}
+	// System clipboard first (pbcopy/xclip/xsel/wl-copy or native API); OSC 52
+	// only as fallback for e.g. SSH sessions without a clipboard utility.
+	if err := clipboard.WriteAll(rep); err == nil {
+		return "report copied to clipboard", true
 	}
 	// stderr, because Bubble Tea owns stdout: both reach the tty, but only one
 	// of them is fighting the renderer for it mid-frame.
