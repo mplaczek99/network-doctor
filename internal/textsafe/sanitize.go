@@ -17,8 +17,8 @@ var escapeRe = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(
 // originates from external tools or remote servers (banners, error strings), so
 // a hostile peer can't drive the terminal. Tabs become spaces; everything else
 // in the control range (incl. lone ESC, C1, newlines) and invalid UTF-8 is
-// dropped. ponytail: single-line oriented — keep newlines too when multi-line
-// tool output lands in Phase 2.
+// dropped. Clean intentionally has a single-line contract; streaming callers
+// split tool output into lines before sanitizing it.
 func Clean(s string) string {
 	s = escapeRe.ReplaceAllString(s, "")
 	return strings.Map(func(r rune) rune {

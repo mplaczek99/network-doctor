@@ -14,7 +14,6 @@ import (
 // exportReport saves the report next to the user (save=true) or copies it to
 // the clipboard via OSC 52, and returns the one-line notice for the help bar
 // plus whether the export succeeded.
-// ponytail: raw OSC 52 on stderr — add tmux/screen passthrough if someone asks.
 func exportReport(rep string, save bool) (notice string, ok bool) {
 	if save {
 		name := fmt.Sprintf("network-doctor-%s.txt", time.Now().Format("20060102-150405"))
@@ -25,10 +24,25 @@ func exportReport(rep string, save bool) (notice string, ok bool) {
 	}
 	// stderr, because Bubble Tea owns stdout: both reach the tty, but only one
 	// of them is fighting the renderer for it mid-frame.
-	if _, err := fmt.Fprintf(os.Stderr, "\x1b]52;c;%s\x07", base64.StdEncoding.EncodeToString([]byte(rep))); err != nil {
+	if _, err := fmt.Fprint(os.Stderr, osc52Sequence(rep)); err != nil {
 		return "copy failed: " + err.Error(), false
 	}
 	return "report copied to clipboard (terminal must support OSC 52)", true
+}
+
+// osc52Sequence wraps OSC 52 in the multiplexer-specific DCS passthrough
+// required for the containing terminal to receive it. TMUX takes precedence
+// when both environment markers are present, matching conventional detection.
+func osc52Sequence(rep string) string {
+	osc := "\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte(rep)) + "\x07"
+	switch {
+	case os.Getenv("TMUX") != "":
+		return "\x1bPtmux;\x1b" + osc + "\x1b\\"
+	case os.Getenv("STY") != "":
+		return "\x1bP" + osc + "\x1b\\"
+	default:
+		return osc
+	}
 }
 
 // report renders the finished run as plain text safe to paste into a ticket

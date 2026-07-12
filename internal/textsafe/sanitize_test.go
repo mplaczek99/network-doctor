@@ -39,6 +39,9 @@ func TestSanitize(t *testing.T) {
 	if got := Clean("\x1b[31mhello\x1b[0m"); got != "hello" {
 		t.Errorf("escape strip = %q, want %q", got, "hello")
 	}
+	if got := Clean("line1\nline2"); got != "line1line2" {
+		t.Errorf("newline strip = %q, want %q", got, "line1line2")
+	}
 }
 
 func FuzzSanitize(f *testing.F) {
