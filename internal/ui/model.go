@@ -577,7 +577,7 @@ func (m *model) scheduleStep() []tea.Cmd {
 			m.started[p.ID] = true
 			progress = true
 			if blocked {
-				m.results[p.ID] = skipResult(p)
+				m.results[p.ID] = diagnostic.ProbeResult{ID: p.ID, Status: diagnostic.StatusSkip, Detail: "skipped — a prerequisite failed"}
 				continue
 			}
 			cmds = append(cmds, m.runProbe(p))
@@ -600,10 +600,6 @@ func depsState(deps []diagnostic.ProbeID, res map[diagnostic.ProbeID]diagnostic.
 		}
 	}
 	return true, blocked
-}
-
-func skipResult(p diagnostic.Probe) diagnostic.ProbeResult {
-	return diagnostic.ProbeResult{ID: p.ID, Status: diagnostic.StatusSkip, Detail: "skipped — a prerequisite failed"}
 }
 
 // runProbe builds the tea.Cmd for a probe, capturing the generation, the parent
@@ -964,27 +960,15 @@ func (m model) banner() string {
 	summary := diagnostic.Diagnose(m.target, order, m.results)
 	if firstFail == nil {
 		if anyWarn {
-			if summary == "" {
-				summary = "Checks passed with warnings — see the ! row for details."
-			}
 			if m.verifying {
 				summary = "Fix verified: " + summary
 			}
 			return warnStyle.Render("! " + summary)
 		}
-		if summary == "" {
-			summary = "All checks passed — no problems found."
-			if m.target != nil {
-				summary = "All checks passed — " + m.targetHP() + " looks healthy."
-			}
-		}
 		if m.verifying {
 			summary = "Fix verified: " + summary
 		}
 		return passStyle.Render("✓ " + summary)
-	}
-	if summary == "" {
-		summary = "A check failed — see the ✗ row for details."
 	}
 	if m.verifying {
 		summary = "Fix didn't help: " + summary
@@ -1174,19 +1158,6 @@ func (m model) toolboxView() string {
 	return joinChips(m.vpWidth(), faintStyle.Render("  ·  "), parts) + "\n"
 }
 
-// jobTailN is how many output lines the job pane can show given avail height;
-// unknown terminal height falls back to jobTailLines.
-func (m model) jobTailN(avail int) int {
-	tailN := jobTailLines
-	if m.height > 0 {
-		overhead := 5 // rule, title, status, context note, trailing blank
-		if tailN = avail - overhead; tailN < 0 {
-			tailN = 0
-		}
-	}
-	return tailN
-}
-
 // jobView renders the job pane with an adaptive tail: avail is the screen
 // height left over for this pane; unknown height falls back to jobTailLines.
 func (m model) jobView(avail int) string {
@@ -1196,7 +1167,13 @@ func (m model) jobView(avail int) string {
 	if m.height > 0 && avail < 5 {
 		return "" // not even rule+title+status+note fit — drop the pane
 	}
-	tailN := m.jobTailN(avail)
+	tailN := jobTailLines
+	if m.height > 0 {
+		tailN = avail - 5 // rule, title, status, context note, trailing blank
+		if tailN < 0 {
+			tailN = 0
+		}
+	}
 	var b strings.Builder
 	b.WriteString(faintStyle.Render(strings.Repeat("─", m.vpWidth())) + "\n")
 	b.WriteString(titleStyle.Render("$ "+m.jobDisplay) + "\n")

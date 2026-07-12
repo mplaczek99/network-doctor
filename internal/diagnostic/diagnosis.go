@@ -8,8 +8,7 @@ import (
 // Diagnose computes the plain-English verdict from current-generation native
 // probe state only (tool output never feeds in). First-fail ordering + combination
 // rules. Returns "Running diagnostics…" until every probe in order has a result.
-// A completed target with no failures returns an empty string because the
-// successful probe rows already communicate the outcome.
+// A completed run always returns a verdict.
 func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 	for _, id := range order {
 		if _, ok := res[id]; !ok {
@@ -88,7 +87,7 @@ func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 	case prxDown && pass(ProbeInternet):
 		return "The target and direct egress work, but the configured environment proxy is unreachable — apps that honor HTTP(S)_PROXY will fail."
 	default:
-		return ""
+		return "All checks passed — " + hp + " looks healthy."
 	}
 }
 

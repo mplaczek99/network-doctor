@@ -271,16 +271,17 @@ func TestProxyProbeAuthRequired(t *testing.T) {
 }
 
 // HTTP_PROXY-only environments (no HTTPS_PROXY) still count as configured.
-func TestEnvProxyURLFallsBackToHTTP(t *testing.T) {
+func TestProxyProbeFallsBackToHTTP(t *testing.T) {
 	ops := &netops{proxyFromEnv: func(req *http.Request) (*url.URL, error) {
 		if req.URL.Scheme == "http" {
 			return url.Parse("http://proxy:8080")
 		}
 		return nil, nil
+	}, dialContext: func(context.Context, string, string) (net.Conn, error) {
+		return &scriptConn{r: strings.NewReader("HTTP/1.1 200 Connection established\r\n\r\n")}, nil
 	}}
-	u, err := ops.envProxyURL()
-	if err != nil || u == nil || u.Host != "proxy:8080" {
-		t.Errorf("envProxyURL = (%v, %v), want the http-scheme proxy", u, err)
+	if r := ops.proxyProbe(context.Background(), nil); r.Status != StatusPass {
+		t.Errorf("HTTP_PROXY fallback = %+v, want PASS", r)
 	}
 }
 

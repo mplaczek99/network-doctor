@@ -322,25 +322,19 @@ func (o *netops) internetProbe(ctx context.Context, _ map[ProbeID]ProbeResult) P
 	return r
 }
 
-// envProxyURL returns the proxy the environment configures for outbound
-// HTTPS (falling back to plain HTTP), or nil when none applies. NO_PROXY and
-// lowercase variants are honored via the stdlib rules.
-func (o *netops) envProxyURL() (*url.URL, error) {
-	for _, scheme := range []string{"https", "http"} {
-		u, err := o.proxyFromEnv(&http.Request{URL: &url.URL{Scheme: scheme, Host: probeHost}})
-		if err != nil || u != nil {
-			return u, err
-		}
-	}
-	return nil, nil
-}
-
 // proxyProbe checks egress through the environment-configured proxy: dial the
 // proxy and ask for a CONNECT tunnel to probeHost:443. This is exactly what
 // proxied HTTPS clients do, minus the TLS handshake inside the tunnel.
 func (o *netops) proxyProbe(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
 	r := ProbeResult{ID: ProbeProxy}
-	proxyURL, err := o.envProxyURL()
+	var proxyURL *url.URL
+	var err error
+	for _, scheme := range []string{"https", "http"} {
+		proxyURL, err = o.proxyFromEnv(&http.Request{URL: &url.URL{Scheme: scheme, Host: probeHost}})
+		if err != nil || proxyURL != nil {
+			break
+		}
+	}
 	if err != nil {
 		r.Status = StatusFail
 		r.Detail = "bad proxy configuration: " + textsafe.Clean(err.Error())
@@ -385,7 +379,8 @@ func (o *netops) proxyProbe(ctx context.Context, _ map[ProbeID]ProbeResult) Prob
 		return r
 	}
 	// net.Conn reads don't know ctx exists; the read deadline is the only leash.
-	conn.SetReadDeadline(time.Now().Add(remaining(ctx)))
+	dl, _ := ctx.Deadline()
+	conn.SetReadDeadline(dl)
 	// Bounded read: the response is attacker-controlled.
 	resp, err := http.ReadResponse(bufio.NewReader(io.LimitReader(conn, 4096)), &http.Request{Method: http.MethodConnect})
 	if err != nil {
@@ -799,15 +794,4 @@ func joinIPs(ips []net.IP) string {
 		parts[i] = ip.String()
 	}
 	return strings.Join(parts, ", ")
-}
-
-// remaining returns the time left on ctx's deadline, or ProbeTimeout if none.
-func remaining(ctx context.Context) time.Duration {
-	if dl, ok := ctx.Deadline(); ok {
-		if d := time.Until(dl); d > 0 {
-			return d
-		}
-		return 0
-	}
-	return ProbeTimeout
 }

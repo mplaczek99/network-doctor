@@ -96,11 +96,11 @@ func TestDiagnoseTarget(t *testing.T) {
 		t.Errorf("got %q, want 'unreachable'", v)
 	}
 
-	// Everything passes → the probe rows are sufficient; no redundant summary.
+	// Everything passes → Diagnose owns the shared all-clear verdict.
 	for _, id := range order {
 		res[id] = ProbeResult{Status: StatusPass}
 	}
-	if v := Diagnose(tg, order, res); v != "" {
-		t.Errorf("got %q, want no redundant success verdict", v)
+	if v := Diagnose(tg, order, res); !strings.Contains(v, "github.com:443 looks healthy") {
+		t.Errorf("got %q, want target healthy verdict", v)
 	}
 }

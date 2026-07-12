@@ -1,10 +1,6 @@
 package diagnostic
 
-import (
-	"context"
-	"testing"
-	"time"
-)
+import "testing"
 
 func mustTarget(t *testing.T, s string) *Target {
 	t.Helper()
@@ -52,16 +48,5 @@ func TestBuildProbesNamesProtocolApplicationRow(t *testing.T) {
 	got := http[len(http)-1]
 	if got.ID != ProbeHTTP || got.Name != "HTTP example.com" || len(got.Deps) != 1 || got.Deps[0] != ProbeTargetTCP {
 		t.Errorf("plain HTTP application probe = %+v, want HTTP depending on target TCP", got)
-	}
-}
-
-func TestRemaining(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if d := remaining(ctx); d <= 0 || d > 2*time.Second {
-		t.Errorf("remaining = %v, want (0,2s]", d)
-	}
-	if d := remaining(context.Background()); d != ProbeTimeout {
-		t.Errorf("remaining(no deadline) = %v, want %v", d, ProbeTimeout)
 	}
 }

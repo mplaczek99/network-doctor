@@ -217,16 +217,5 @@ func buildReport(t *diagnostic.Target, probes []diagnostic.Probe, results map[di
 		rep.Checks = append(rep.Checks, c)
 	}
 	rep.Summary = diagnostic.Diagnose(t, order, results)
-	if rep.Summary == "" {
-		// Same wording as the TUI banner fallbacks.
-		if rep.OK {
-			rep.Summary = "All checks passed — no problems found."
-			if t != nil {
-				rep.Summary = fmt.Sprintf("All checks passed — %s looks healthy.", net.JoinHostPort(t.Host, fmt.Sprint(t.Port)))
-			}
-		} else {
-			rep.Summary = "A check failed — see the failed check for details."
-		}
-	}
 	return rep
 }
