@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -330,6 +331,13 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.viewing, m.follow = true, true
 		m.vp = viewport.New(m.vpWidth(), m.vpHeight())
+		// Zero-value bindings disable everything else (j/k, b/f/space, u/d).
+		m.vp.KeyMap = viewport.KeyMap{
+			Up:       key.NewBinding(key.WithKeys("up")),
+			Down:     key.NewBinding(key.WithKeys("down")),
+			PageUp:   key.NewBinding(key.WithKeys("pgup")),
+			PageDown: key.NewBinding(key.WithKeys("pgdown")),
+		}
 		m.refreshViewport()
 		return m, nil
 	case "y", "w":
@@ -1086,7 +1094,7 @@ func (m model) outputView() string {
 	b.WriteString(m.jobStatusLine() + "\n")
 	b.WriteString(m.vp.View() + "\n")
 	b.WriteString(faintStyle.Render(m.vpContext()) + "\n")
-	b.WriteString(helpKeys(m.width, "↑/↓/j/k", "scroll", "pgup/pgdn/b/f/space", "page", "u/d", "half page", "esc", "back", "q", "quit"))
+	b.WriteString(helpKeys(m.width, "↑/↓", "scroll", "pgup/pgdn", "page", "esc", "back", "q", "quit"))
 	return b.String()
 }
 
