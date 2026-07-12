@@ -183,12 +183,12 @@ func TestScheduleStartsRoot(t *testing.T) {
 
 func TestSelectionClamp(t *testing.T) {
 	m := newModel(nil) // 4 rows
-	u, _ := m.Update(keyMsg("k"))
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	if asModel(t, u).selected != 0 {
 		t.Error("up at top must stay 0")
 	}
 	for i := 0; i < 5; i++ {
-		u, _ = m.Update(keyMsg("j"))
+		u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
 		m = asModel(t, u)
 	}
 	if m.selected != 3 {
@@ -213,14 +213,14 @@ func TestExitCode(t *testing.T) {
 	}
 }
 
-// Runes batched into one KeyMsg by a fast stdin read ("jjj") are replayed one
+// Runes batched into one KeyMsg by a fast stdin read ("xxr") are replayed one
 // key at a time instead of matching no binding and being dropped.
 func TestBatchedRunesReplayed(t *testing.T) {
 	m := newModel(mustTarget(t, "example.com:443"))
-	u, _ := m.Update(keyMsg("jjj"))
+	u, _ := m.Update(keyMsg("xxr"))
 	nm := asModel(t, u)
-	if nm.selected != 3 {
-		t.Errorf("selected = %d after batched jjj, want 3", nm.selected)
+	if !nm.entering {
+		t.Error("batched xxr not replayed; trailing r should open the rerun prompt")
 	}
 }
 

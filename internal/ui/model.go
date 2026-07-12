@@ -314,12 +314,12 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		ti.CursorEnd()
 		m.input = ti
 		return m, textinput.Blink
-	case "up", "k":
+	case "up":
 		if m.selected > 0 {
 			m.selected--
 		}
 		return m, nil
-	case "down", "j":
+	case "down":
 		if m.selected < len(m.probes)-1 {
 			m.selected++
 		}
@@ -920,7 +920,7 @@ func (m model) helpView(deferred bool) string {
 		}
 		return helpKeys(m.width, append(kv, "q", "quit")...)
 	}
-	kv := []string{"↑/↓/j/k", "pick a check"}
+	kv := []string{"↑/↓", "pick a check"}
 	if hasJob {
 		kv = append(kv, "enter", "full output")
 	}
