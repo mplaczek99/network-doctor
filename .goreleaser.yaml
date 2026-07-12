@@ -22,7 +22,7 @@ source:
   prefix_template: "{{ .ProjectName }}-{{ .Version }}/"
 
 aur_sources:
-  - homepage: https://github.com/mplaczek99/network-doctor
+  - homepage: https://github.com/heymaikol/network-doctor
     description: Terminal UI that diagnoses network connectivity and explains where the connection breaks
     license: Apache-2.0
     maintainers:
@@ -41,10 +41,10 @@ aur_sources:
 
 homebrew_casks:
   - repository:
-      owner: mplaczek99
+      owner: heymaikol
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    homepage: https://github.com/mplaczek99/network-doctor
+    homepage: https://github.com/heymaikol/network-doctor
     description: Terminal UI that diagnoses network connectivity and explains where the connection breaks
     # Unsigned binary: strip Gatekeeper quarantine on install (per GoReleaser docs).
     hooks:
