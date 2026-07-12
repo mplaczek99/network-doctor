@@ -633,14 +633,7 @@ func familyNote(attempts []Attempt, sel net.IP) string {
 // interleaveFamilies orders addresses IPv6-first, alternating families
 // (RFC 8305 §4), so one broken family can't monopolize the attempt sequence.
 func interleaveFamilies(ips []net.IP) []net.IP {
-	var v6, v4 []net.IP
-	for _, ip := range ips {
-		if ip.To4() == nil {
-			v6 = append(v6, ip)
-		} else {
-			v4 = append(v4, ip)
-		}
-	}
+	v4, v6 := splitFamilies(ips)
 	if len(v6) == 0 || len(v4) == 0 {
 		return ips
 	}

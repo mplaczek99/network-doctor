@@ -46,20 +46,12 @@ func (s JobStatus) String() string {
 	return "?"
 }
 
-// Stream identifies which pipe an output line came from.
-type Stream int
-
-const (
-	StreamStdout Stream = iota
-	StreamStderr
-)
-
 // ToolOutputMsg is one sanitized output line. JobID+Generation identity lets
 // Update drop stale-job messages.
 type ToolOutputMsg struct {
 	JobID      string
 	Generation int
-	Stream     Stream
+	Stderr     bool
 	Line       string
 }
 
@@ -129,8 +121,8 @@ func startTool(parent context.Context, gen int, id, name string, args, env []str
 		defer cancel()
 		var wg sync.WaitGroup
 		wg.Add(2)
-		go func() { defer wg.Done(); streamReader(stdout, StreamStdout, id, gen, j.ch, &dropped) }()
-		go func() { defer wg.Done(); streamReader(stderr, StreamStderr, id, gen, j.ch, &dropped) }()
+		go func() { defer wg.Done(); streamReader(stdout, false, id, gen, j.ch, &dropped) }()
+		go func() { defer wg.Done(); streamReader(stderr, true, id, gen, j.ch, &dropped) }()
 		wg.Wait() // drain both pipes to EOF before Wait (no drain/wait race)
 		werr := cmd.Wait()
 		// Guaranteed (blocking) terminal send, last — never dropped.
@@ -155,13 +147,13 @@ func waitForMsg(ch <-chan tea.Msg) tea.Cmd {
 // always consumes the bytes (so the child never stalls) and only drops the
 // *message* when the channel is full, so the terminal event can still be
 // delivered (no deadlock).
-func streamReader(r io.Reader, stream Stream, id string, gen int, ch chan<- tea.Msg, dropped *int64) {
+func streamReader(r io.Reader, stderr bool, id string, gen int, ch chan<- tea.Msg, dropped *int64) {
 	br := bufio.NewReader(r)
 	for {
 		line, err := readCappedLine(br)
 		if line != "" {
 			select {
-			case ch <- ToolOutputMsg{JobID: id, Generation: gen, Stream: stream, Line: textsafe.Clean(winSafe(line))}:
+			case ch <- ToolOutputMsg{JobID: id, Generation: gen, Stderr: stderr, Line: textsafe.Clean(winSafe(line))}:
 			default:
 				atomic.AddInt64(dropped, 1)
 			}

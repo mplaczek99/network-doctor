@@ -56,11 +56,11 @@ func TestReportSanitized(t *testing.T) {
 		},
 	}
 	for i := 0; i < 16; i++ {
-		m.jobLines = append(m.jobLines, outLine{StreamStdout, fmt.Sprintf("line %02d", i)})
+		m.jobLines = append(m.jobLines, outLine{false, fmt.Sprintf("line %02d", i)})
 	}
 	m.jobLines = append(m.jobLines,
-		outLine{StreamStderr, "stderr must not be reported"},
-		outLine{StreamStdout, "result 200\x1b[31m"},
+		outLine{true, "stderr must not be reported"},
+		outLine{false, "result 200\x1b[31m"},
 	)
 	m.jobStatus = JobDone
 	m.jobDisplay = "curl https://example.com"
