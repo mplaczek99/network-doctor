@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/heymaikol/network-doctor/internal/diagnostic"
 )
 
@@ -92,6 +93,9 @@ func TestRestartResets(t *testing.T) {
 
 // The restart prompt: prefilled with the current target, esc cancels, a bad
 // line errors and stays open, a good line swaps the target and restarts.
+// It is titled "Restart" and shows the target-forms cheatsheet: before any
+// WindowSizeMsg (height 0 = size unknown), on a roomy terminal, and alongside
+// a validation error.
 func TestRestartPrompt(t *testing.T) {
 	m := newModel(mustTarget(t, "github.com"))
 	u, _ := m.Update(keyMsg("r"))
@@ -104,6 +108,47 @@ func TestRestartPrompt(t *testing.T) {
 	}
 	if !strings.Contains(nm.View(), "network-doctor") {
 		t.Error("prompt view must show the command line")
+	}
+	if !strings.Contains(nm.View(), "Restart") {
+		t.Error("prompt panel must be titled Restart")
+	}
+	// Width is 0 here, so the panel wraps hard; assert the five example
+	// targets (short tokens survive word wrap) rather than whole lines.
+	for _, form := range []string{"example.com", "example.com:8022", "https://example.com/x", "192.0.2.1", "[2001:db8::1]:443", "(nothing)"} {
+		if !strings.Contains(nm.View(), form) {
+			t.Errorf("prompt before WindowSizeMsg must show target form %q", form)
+		}
+	}
+
+	// On a roomy terminal the panel is 88 wide and each form line renders
+	// unwrapped, annotation and all.
+	u, _ = nm.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	nm = asModel(t, u)
+	formLines := []string{
+		"example.com            hostname (default port 443)",
+		"example.com:8022       hostname with port (protocol inferred from the port)",
+		"https://example.com/x  URL (scheme sets protocol and default port; path ignored)",
+		"192.0.2.1, 2001:db8::1 IP literal",
+		"[2001:db8::1]:443      IP literal with port (IPv6 needs the brackets)",
+		"(nothing)              no target — runs the generic checks",
+	}
+	for _, line := range formLines {
+		if !strings.Contains(nm.View(), line) {
+			t.Errorf("roomy prompt must show form line %q", line)
+		}
+	}
+
+	// A validation error joins the forms; it must not displace them.
+	nm.input.SetValue("one two")
+	u, _ = nm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	errView := asModel(t, u).View()
+	if !strings.Contains(errView, "one target only") {
+		t.Error("bad line must show the validation error")
+	}
+	for _, line := range formLines {
+		if !strings.Contains(errView, line) {
+			t.Errorf("forms must stay visible alongside the error, missing %q", line)
+		}
 	}
 
 	u, _ = nm.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -259,6 +304,73 @@ func TestViewFitsTerminal(t *testing.T) {
 		nm := asModel(t, u)
 		if rows := strings.Count(nm.View(), "\n") + 1; rows > nm.height {
 			t.Errorf("%dx%d: view is %d rows, terminal is %d", size.Width, size.Height, rows, nm.height)
+		}
+	}
+	// Same invariant with the restart prompt (and its forms cheatsheet) open.
+	for _, size := range []tea.WindowSizeMsg{
+		{Width: 120, Height: 40},
+		{Width: 100, Height: 24},
+	} {
+		u, _ := m.Update(size)
+		nm := asModel(t, u)
+		u, _ = nm.Update(keyMsg("r"))
+		nm = asModel(t, u)
+		if rows := strings.Count(nm.View(), "\n") + 1; rows > nm.height {
+			t.Errorf("prompt open %dx%d: view is %d rows, terminal is %d", size.Width, size.Height, rows, nm.height)
+		}
+	}
+}
+
+// On a short terminal the forms cheatsheet is dropped but the input survives.
+func TestPromptFormsDroppedWhenShort(t *testing.T) {
+	m := newModel(mustTarget(t, "example.com:443"))
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+	nm := asModel(t, u)
+	u, _ = nm.Update(keyMsg("r"))
+	nm = asModel(t, u)
+	v := nm.View()
+	if strings.Contains(v, "hostname (default port 443)") {
+		t.Error("80x12: forms cheatsheet must be dropped")
+	}
+	if !strings.Contains(v, "network-doctor") || !strings.Contains(v, "Restart") {
+		t.Error("80x12: the input line must survive")
+	}
+}
+
+// The forms never starve a live job pane below jobView's 5-row minimum: at a
+// height where they would squeeze avail to 1-4 rows, the pane wins.
+func TestPromptFormsYieldToJobPane(t *testing.T) {
+	m := newModel(mustTarget(t, "example.com:443"))
+	m.jobStatus = JobRunning
+	m.jobDisplay = "ping example.com"
+	for range 200 {
+		m.jobLines = append(m.jobLines, outLine{text: "reply from 1.2.3.4"})
+	}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	nm := asModel(t, u)
+	u, _ = nm.Update(keyMsg("r"))
+	nm = asModel(t, u)
+	v := nm.View()
+	if !strings.Contains(v, "$ ping example.com") {
+		t.Error("100x30: the job pane must still render")
+	}
+	if strings.Contains(v, "hostname (default port 443)") {
+		t.Error("100x30: forms must yield to the job pane")
+	}
+}
+
+// At 40 cols the prompt panel wraps its content instead of overflowing
+// horizontally. Tested on promptView in isolation: the whole view has a
+// pre-existing wide banner out of scope here.
+func TestPromptViewNarrowNoOverflow(t *testing.T) {
+	m := newModel(mustTarget(t, "example.com:443"))
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 24})
+	nm := asModel(t, u)
+	u, _ = nm.Update(keyMsg("r"))
+	nm = asModel(t, u)
+	for _, line := range strings.Split(nm.promptView(true), "\n") {
+		if w := lipgloss.Width(line); w > 40 {
+			t.Errorf("prompt line %d cols wide, terminal is 40: %q", w, line)
 		}
 	}
 }

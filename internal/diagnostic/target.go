@@ -47,6 +47,16 @@ type Target struct {
 	IsLiteral    bool
 }
 
+// TargetForms documents the grammar ParseTarget accepts. --help and the
+// restart prompt render it verbatim; no trailing newline — the seams around
+// the block belong to the callers.
+const TargetForms = `  example.com            hostname (default port 443)
+  example.com:8022       hostname with port (protocol inferred from the port)
+  https://example.com/x  URL (scheme sets protocol and default port; path ignored)
+  192.0.2.1, 2001:db8::1 IP literal
+  [2001:db8::1]:443      IP literal with port (IPv6 needs the brackets)
+  (nothing)              no target — runs the generic checks`
+
 // hostnameRe is a strict RFC-1123-ish hostname allowlist (labels of
 // alphanumerics + internal hyphens, dot-separated). Everything else is rejected
 // so nothing user-supplied is ever fed to a probe or (later) a command.

@@ -304,7 +304,6 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		ti := textinput.New()
 		ti.Prompt = "network-doctor "
 		ti.PromptStyle = keyStyle
-		ti.Placeholder = "host[:port] or http(s)://host — empty checks the connection"
 		if m.target != nil {
 			ti.SetValue(m.target.Raw)
 		}
@@ -754,7 +753,7 @@ func (m model) View() string {
 	body := m.bodyView(deferred)
 	help := m.helpView(deferred)
 	if m.entering {
-		help = m.promptView()
+		help = m.promptView(true)
 	}
 	if m.confirmTool != nil {
 		help = m.confirmView()
@@ -767,6 +766,16 @@ func (m model) View() string {
 	fixed := top + body + "\n" + toolbox + "\n"
 	tail := help + "\n"
 	avail := m.height - strings.Count(fixed, "\n") - strings.Count(tail, "\n") - 1
+	if m.entering && m.confirmTool == nil && m.height > 0 {
+		// The forms cheatsheet yields first: drop it when the view would
+		// overflow, or when it would starve a live job pane below jobView's
+		// 5-row minimum. m.height == 0 means size unknown — keep the forms.
+		hasJob := m.activeJob != nil || m.jobStatus != JobQueued
+		if avail < 0 || (hasJob && avail < 5) {
+			tail = m.promptView(false) + "\n"
+			avail = m.height - strings.Count(fixed, "\n") - strings.Count(tail, "\n") - 1
+		}
+	}
 	return fixed + m.jobView(avail) + tail
 }
 
@@ -897,12 +906,22 @@ func (m model) confirmView() string {
 }
 
 // promptView is the restart prompt panel, shown in place of the help bar.
-func (m model) promptView() string {
-	body := panelTitleStyle.Render("Run again") + "\n" + m.input.View()
+// withForms includes the target-grammar cheatsheet; View drops it when the
+// terminal is too short (the input and any job pane always outrank it).
+func (m model) promptView(withForms bool) string {
+	body := panelTitleStyle.Render("Restart") + "\n" + m.input.View()
+	if withForms {
+		// Dedent the shared const: the two-space indent reads right under
+		// "Target forms:" in --help but floats oddly inside the panel.
+		forms := strings.TrimPrefix(strings.ReplaceAll(diagnostic.TargetForms, "\n  ", "\n"), "  ")
+		body += "\n\n" + faintStyle.Render(forms)
+	}
 	if m.inputErr != "" {
 		body += "\n" + failStyle.Render("✗ "+m.inputErr)
 	}
-	w := max(min(m.width-2, 76), 24)
+	// 88, not 76: the longest target-form line needs ~86 content cols to
+	// render unwrapped on wide terminals.
+	w := max(min(m.width-2, 88), 24)
 	return focusPanelStyle.Width(w).Render(body) + "\n" + helpKeys(m.width, "enter", "run", "esc", "back")
 }
 

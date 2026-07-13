@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"strings"
 	"testing"
 
@@ -39,6 +40,18 @@ func TestRun(t *testing.T) {
 				t.Errorf("stderr = %q, want contains %q", stderr.String(), tt.wantStderr)
 			}
 		})
+	}
+}
+
+// Pins the seams around the shared TargetForms const: the "Target forms:"
+// header, the blank line before "Flags:", and no trailing newline in the
+// const itself — without freezing stdlib flag formatting.
+func TestPrintUsageTargetForms(t *testing.T) {
+	var buf bytes.Buffer
+	printUsage(&buf, flag.NewFlagSet("network-doctor", flag.ContinueOnError))
+	want := "Target forms:\n" + diagnostic.TargetForms + "\n\nFlags:"
+	if !strings.Contains(buf.String(), want) {
+		t.Errorf("usage output missing the target-forms section:\n%s", buf.String())
 	}
 }
 

@@ -115,14 +115,7 @@ generic checks; with a target it also probes that endpoint. Flags may be
 given before or after the target.
 
 Target forms:
-  example.com            hostname (default port 443)
-  example.com:8022       hostname with port (protocol inferred from the port)
-  https://example.com/x  URL (scheme sets protocol and default port; path ignored)
-  192.0.2.1, 2001:db8::1 IP literal
-  [2001:db8::1]:443      IP literal with port (IPv6 needs the brackets)
-
-Flags:
-`)
+`+diagnostic.TargetForms+"\n\nFlags:\n")
 	fs.SetOutput(w)
 	fs.PrintDefaults()
 }
