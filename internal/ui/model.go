@@ -38,7 +38,7 @@ type pendingKind int
 
 const (
 	pendQuit pendingKind = iota
-	pendRerun
+	pendRestart
 	pendTool
 	pendFix
 )
@@ -76,7 +76,7 @@ type model struct {
 
 	generation int
 	// Generation context; cancel kills all in-flight probes and the active job on
-	// rerun/quit. Kept alive after the chain completes so tools can run under it.
+	// restart/quit. Kept alive after the chain completes so tools can run under it.
 	ctx    context.Context
 	cancel context.CancelFunc
 
@@ -99,8 +99,8 @@ type model struct {
 	follow  bool
 	vp      viewport.Model
 
-	// Rerun prompt (r): an editable network-doctor command line. Enter parses
-	// and reruns; esc closes without touching the current run.
+	// Restart prompt (r): an editable network-doctor command line. Enter parses
+	// and restarts; esc closes without touching the current run.
 	entering bool
 	input    textinput.Model
 	inputErr string
@@ -110,15 +110,15 @@ type model struct {
 	confirmTool *Tool
 
 	// Auto-fix (f): fixing marks the active job as a fix command — when its
-	// terminal event arrives the chain reruns to verify the fix. verifying
-	// labels that rerun's verdict in the banner.
+	// terminal event arrives the chain restarts to verify the fix. verifying
+	// labels that restart's verdict in the banner.
 	fixing    bool
 	verifying bool
 
 	toolbox bool // --toolbox: chain deferred until 'r'
 
 	// notice is one-line feedback from the last export (y/w): saved path,
-	// copy confirmation, or the error. Sticky until the next export or rerun.
+	// copy confirmation, or the error. Sticky until the next export or restart.
 	notice   string
 	noticeOK bool
 
@@ -234,7 +234,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case probeDoneMsg:
 		if msg.gen != m.generation {
-			return m, nil // stale rerun
+			return m, nil // stale restart
 		}
 		res := msg.res
 		res.ID = msg.id // scheduler identity wins over whatever the probe wrote on its own name tag
@@ -270,7 +270,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.fixing {
 			m.fixing = false
-			cmd := m.doRerun() // verification rerun — the fix's real verdict
+			cmd := m.doRestart() // verification restart — the fix's real verdict
 			m.verifying = true
 			return m, cmd
 		}
@@ -299,7 +299,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.clearCancel()
 		return m, tea.Quit
 	case "r":
-		// Open the rerun prompt; an active job keeps streaming until Enter commits.
+		// Open the restart prompt; an active job keeps streaming until Enter commits.
 		m.entering, m.inputErr = true, ""
 		ti := textinput.New()
 		ti.Prompt = "network-doctor "
@@ -409,8 +409,8 @@ func (m model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// handlePromptKey handles keys while the rerun prompt is open. Enter parses
-// the line and reruns (deferred if a job is still running), esc closes, and
+// handlePromptKey handles keys while the restart prompt is open. Enter parses
+// the line and restarts (deferred if a job is still running), esc closes, and
 // everything else edits the input.
 func (m model) handlePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -426,11 +426,11 @@ func (m model) handlePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.entering = false
 		if m.activeJob != nil {
 			m.activeJob.cancel()
-			m.pending = &pendingAction{kind: pendRerun, target: t}
+			m.pending = &pendingAction{kind: pendRestart, target: t}
 			return m, nil
 		}
 		m.applyTarget(t)
-		return m, m.doRerun()
+		return m, m.doRestart()
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
@@ -438,7 +438,7 @@ func (m model) handlePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// parseRunArgs parses the rerun prompt as a network-doctor command line: an
+// parseRunArgs parses the restart prompt as a network-doctor command line: an
 // optional leading "network-doctor", then at most one target argument. An
 // empty line means a general, targetless run.
 func parseRunArgs(line string) (*diagnostic.Target, error) {
@@ -470,9 +470,9 @@ func (m *model) runPending(p *pendingAction) (tea.Model, tea.Cmd) {
 	case pendQuit:
 		m.clearCancel()
 		return m, tea.Quit
-	case pendRerun:
+	case pendRestart:
 		m.applyTarget(p.target)
-		return m, m.doRerun()
+		return m, m.doRestart()
 	case pendTool:
 		return m, m.launchTool(p.tool)
 	case pendFix:
@@ -497,9 +497,9 @@ func (m model) fixTool() *Tool {
 	return nil
 }
 
-// doRerun bumps the generation (invalidating outstanding probe/job messages),
+// doRestart bumps the generation (invalidating outstanding probe/job messages),
 // clears run + job state, resets the context, and reschedules from the root.
-func (m *model) doRerun() tea.Cmd {
+func (m *model) doRestart() tea.Cmd {
 	wasTicking := m.spinnerActive()
 	m.clearCancel()
 	m.ctx = nil
@@ -896,7 +896,7 @@ func (m model) confirmView() string {
 	return focusPanelStyle.Width(w).Render(body) + "\n" + helpKeys(m.width, "y", "run", "any other key", "cancel")
 }
 
-// promptView is the rerun prompt panel, shown in place of the help bar.
+// promptView is the restart prompt panel, shown in place of the help bar.
 func (m model) promptView() string {
 	body := panelTitleStyle.Render("Run again") + "\n" + m.input.View()
 	if m.inputErr != "" {
@@ -977,7 +977,7 @@ func (m model) banner() string {
 	}
 	if fix := m.fixTool(); fix != nil {
 		_, _, display := fix.Build(m.target)
-		lines = append(lines, "  Press "+selStyle.Render("f")+" to try a fix ("+display+") — the checks rerun to verify.")
+		lines = append(lines, "  Press "+selStyle.Render("f")+" to try a fix ("+display+") — the checks restart to verify.")
 	}
 	if next := m.nextStep(firstFail.ID); next != "" {
 		lines = append(lines, "  "+next)

@@ -247,9 +247,9 @@ func TestDeferredQuit(t *testing.T) {
 	}
 }
 
-// Committing the rerun prompt while a job runs cancels it and defers the
-// rerun; the terminal event bumps the generation.
-func TestDeferredRerun(t *testing.T) {
+// Committing the restart prompt while a job runs cancels it and defers the
+// restart; the terminal event bumps the generation.
+func TestDeferredRestart(t *testing.T) {
 	m := newModel(mustTarget(t, "github.com"))
 	m.generation = 3
 	canceled := false
@@ -258,15 +258,15 @@ func TestDeferredRerun(t *testing.T) {
 	u, _ := m.Update(keyMsg("r"))
 	nm := asModel(t, u)
 	if !nm.entering {
-		t.Fatal("r must open the rerun prompt")
+		t.Fatal("r must open the restart prompt")
 	}
 	if canceled {
 		t.Error("opening the prompt must not cancel the job")
 	}
 	u, _ = nm.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	nm = asModel(t, u)
-	if nm.pending == nil || nm.pending.kind != pendRerun {
-		t.Fatal("committing during a job must defer a rerun")
+	if nm.pending == nil || nm.pending.kind != pendRestart {
+		t.Fatal("committing during a job must defer a restart")
 	}
 	if !canceled {
 		t.Error("committing must cancel the active job")
@@ -275,17 +275,17 @@ func TestDeferredRerun(t *testing.T) {
 	u2, cmd2 := nm.Update(ToolDoneMsg{JobID: "j", Generation: 3, Status: JobCanceled})
 	nm2 := asModelP(t, u2)
 	if nm2.generation != 4 {
-		t.Errorf("generation = %d, want 4 after deferred rerun", nm2.generation)
+		t.Errorf("generation = %d, want 4 after deferred restart", nm2.generation)
 	}
 	if cmd2 == nil {
-		t.Error("deferred rerun must issue a reschedule cmd")
+		t.Error("deferred restart must issue a reschedule cmd")
 	}
 }
 
 // A target entered during an active job must not be applied until the job's
-// terminal event runs the deferred rerun; otherwise old results can render
+// terminal event runs the deferred restart; otherwise old results can render
 // under the new target's header and produce a false healthy verdict.
-func TestDeferredRerunDefersTargetSwap(t *testing.T) {
+func TestDeferredRestartDefersTargetSwap(t *testing.T) {
 	m := newModel(mustTarget(t, "github.com"))
 	for _, probe := range m.probes {
 		m.results[probe.ID] = diagnostic.ProbeResult{ID: probe.ID, Status: diagnostic.StatusPass}
@@ -306,23 +306,23 @@ func TestDeferredRerunDefersTargetSwap(t *testing.T) {
 	if nm.target == nil || nm.target.Host != "github.com" {
 		t.Fatalf("target changed before terminal event: %+v", nm.target)
 	}
-	if nm.pending == nil || nm.pending.kind != pendRerun || nm.pending.target == nil || nm.pending.target.Host != "example.com" {
-		t.Fatalf("pending rerun target = %+v", nm.pending)
+	if nm.pending == nil || nm.pending.kind != pendRestart || nm.pending.target == nil || nm.pending.target.Host != "example.com" {
+		t.Fatalf("pending restart target = %+v", nm.pending)
 	}
 	if got := nm.banner(); strings.Contains(got, "example.com") {
-		t.Fatalf("banner used pending target before rerun: %q", got)
+		t.Fatalf("banner used pending target before restart: %q", got)
 	}
 
 	u, cmd := nm.Update(ToolDoneMsg{JobID: "j", Generation: 3, Status: JobCanceled})
 	nm2 := asModelP(t, u)
 	if cmd == nil {
-		t.Fatal("deferred rerun must issue a reschedule cmd")
+		t.Fatal("deferred restart must issue a reschedule cmd")
 	}
 	if nm2.target == nil || nm2.target.Host != "example.com" {
 		t.Fatalf("target after terminal event = %+v, want example.com", nm2.target)
 	}
 	if len(nm2.results) != 0 {
-		t.Fatalf("results after deferred rerun = %d, want cleared", len(nm2.results))
+		t.Fatalf("results after deferred restart = %d, want cleared", len(nm2.results))
 	}
 }
 

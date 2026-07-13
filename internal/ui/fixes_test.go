@@ -73,9 +73,9 @@ func TestFixToolGating(t *testing.T) {
 	}
 }
 
-// The fix job's terminal event reruns the chain (bumped generation, cleared
-// results) — that rerun is the verification — and labels it via verifying.
-func TestFixVerifyRerun(t *testing.T) {
+// The fix job's terminal event restarts the chain (bumped generation, cleared
+// results) — that restart is the verification — and labels it via verifying.
+func TestFixVerifyRestart(t *testing.T) {
 	m := newModel(nil)
 	m.generation = 2
 	doneResults(&m, diagnostic.ProbeDNS)
@@ -85,10 +85,10 @@ func TestFixVerifyRerun(t *testing.T) {
 	u, cmd := m.Update(ToolDoneMsg{JobID: "fx", Generation: 2, Status: JobDone})
 	nm := asModelP(t, u)
 	if nm.generation != 3 {
-		t.Errorf("generation = %d, want 3 — fix completion must rerun to verify", nm.generation)
+		t.Errorf("generation = %d, want 3 — fix completion must restart to verify", nm.generation)
 	}
 	if len(nm.results) != 0 {
-		t.Errorf("results = %v, want cleared for the verification rerun", nm.results)
+		t.Errorf("results = %v, want cleared for the verification restart", nm.results)
 	}
 	if nm.fixing || !nm.verifying {
 		t.Errorf("fixing=%v verifying=%v, want false/true after the fix job ends", nm.fixing, nm.verifying)
@@ -142,8 +142,8 @@ func TestRunPendingFixLaunches(t *testing.T) {
 	nm.clearCancel()
 }
 
-// A user-deferred action (quit/rerun/tool) during a fix job wins over the
-// fix's auto-verify — no surprise rerun afterwards.
+// A user-deferred action (quit/restart/tool) during a fix job wins over the
+// fix's auto-verify — no surprise restart afterwards.
 func TestPendingOverridesFix(t *testing.T) {
 	m := newModel(nil)
 	m.generation = 1
@@ -157,7 +157,7 @@ func TestPendingOverridesFix(t *testing.T) {
 		t.Error("a deferred action must clear the fix flag")
 	}
 	if nm.generation != 1 {
-		t.Errorf("generation = %d, want 1 — no verify rerun on override", nm.generation)
+		t.Errorf("generation = %d, want 1 — no verify restart on override", nm.generation)
 	}
 	if cmd == nil {
 		t.Fatal("the deferred quit must still run")
@@ -167,7 +167,7 @@ func TestPendingOverridesFix(t *testing.T) {
 	}
 }
 
-// The banner labels the verification rerun's verdict and offers 'f' on a
+// The banner labels the verification restart's verdict and offers 'f' on a
 // fixable failure.
 func TestBannerFixVerdicts(t *testing.T) {
 	pass := newModel(nil)
@@ -188,9 +188,9 @@ func TestBannerFixVerdicts(t *testing.T) {
 		t.Errorf("banner = %q, want the 'f' fix offer", got)
 	}
 
-	// A manual rerun clears the label.
-	(&fail).doRerun()
+	// A manual restart clears the label.
+	(&fail).doRestart()
 	if fail.verifying {
-		t.Error("doRerun must clear verifying")
+		t.Error("doRestart must clear verifying")
 	}
 }

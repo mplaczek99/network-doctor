@@ -15,7 +15,7 @@ Network Doctor  github.com:443  ·  Wi-Fi: HomeNet
 ✗ Cannot resolve github.com — DNS failure. (The general internet is reachable.)
   Fix: check /etc/resolv.conf / DNS
   Next: press d — DNS lookup (dig)
-  Press f to try a fix (resolvectl flush-caches) — the checks rerun to verify.
+  Press f to try a fix (resolvectl flush-caches) — the checks restart to verify.
 
 Checks                        Details — DNS github.com
 ✓ › Interface                 FAIL — no A records
@@ -142,7 +142,7 @@ literals are accepted bare (`::1`) or bracketed with a port (`[::1]:443`).
 | `↑`/`↓` (`k`/`j`) | select a probe row |
 | `enter` | open the current tool job's output in a scrollable full-screen viewer |
 | `r` | restart — opens a prompt to edit the `network-doctor` arguments (`enter` runs, `esc` backs out) |
-| `f` | try an automatic fix for the first failed check, then rerun the chain to verify |
+| `f` | try an automatic fix for the first failed check, then restart the chain to verify |
 | `y` / `w` | yank / write (copy / save) a report of the chain plus the completed tool output |
 | `q` | quit |
 
@@ -150,8 +150,8 @@ literals are accepted bare (`::1`) or bracketed with a port (`[::1]:443`).
 same job pipeline as the drill-down tools — flush the DNS cache
 (`resolvectl flush-caches` / `dscacheutil -flushcache` / `ipconfig /flushdns`)
 for a DNS failure, `nmcli networking on` for a downed interface on Linux. No
-sudo, no config rewrites. When the fix job ends, the whole chain reruns
-automatically — that rerun is the verification, labeled in the banner. Remote
+sudo, no config rewrites. When the fix job ends, the whole chain restarts
+automatically — that restart is the verification, labeled in the banner. Remote
 failures (target TCP/TLS/HTTP) have no local fix and offer none. The fix
 selection and verify flow are unit-tested; the fix commands themselves haven't
 been exercised against real broken networks on every OS yet.

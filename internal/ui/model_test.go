@@ -59,9 +59,9 @@ func TestNmapConfirmGate(t *testing.T) {
 	}
 }
 
-// 'r' opens the rerun prompt; Enter bumps the generation, clears run state,
+// 'r' opens the restart prompt; Enter bumps the generation, clears run state,
 // and resets the context.
-func TestRerunResets(t *testing.T) {
+func TestRestartResets(t *testing.T) {
 	m := newModel(nil)
 	m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{Status: diagnostic.StatusPass}
 	m.started[diagnostic.ProbeIface] = true
@@ -69,7 +69,7 @@ func TestRerunResets(t *testing.T) {
 	u, _ := m.Update(keyMsg("r"))
 	nm := asModel(t, u)
 	if !nm.entering {
-		t.Fatal("r must open the rerun prompt")
+		t.Fatal("r must open the restart prompt")
 	}
 	u, cmd := nm.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	nm = asModel(t, u)
@@ -80,24 +80,24 @@ func TestRerunResets(t *testing.T) {
 		t.Errorf("generation = %d, want %d", nm.generation, gen0+1)
 	}
 	if len(nm.results) != 0 || len(nm.started) != 0 {
-		t.Error("rerun must clear results/started")
+		t.Error("restart must clear results/started")
 	}
 	if nm.ctx != nil {
-		t.Error("rerun must reset ctx to nil")
+		t.Error("restart must reset ctx to nil")
 	}
 	if cmd == nil {
-		t.Fatal("rerun must issue a cmd")
+		t.Fatal("restart must issue a cmd")
 	}
 }
 
-// The rerun prompt: prefilled with the current target, esc cancels, a bad
-// line errors and stays open, a good line swaps the target and reruns.
-func TestRerunPrompt(t *testing.T) {
+// The restart prompt: prefilled with the current target, esc cancels, a bad
+// line errors and stays open, a good line swaps the target and restarts.
+func TestRestartPrompt(t *testing.T) {
 	m := newModel(mustTarget(t, "github.com"))
 	u, _ := m.Update(keyMsg("r"))
 	nm := asModel(t, u)
 	if !nm.entering {
-		t.Fatal("r must open the rerun prompt")
+		t.Fatal("r must open the restart prompt")
 	}
 	if nm.input.Value() != "github.com" {
 		t.Errorf("prefill = %q, want github.com", nm.input.Value())
@@ -108,7 +108,7 @@ func TestRerunPrompt(t *testing.T) {
 
 	u, _ = nm.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if esc := asModel(t, u); esc.entering || esc.generation != 0 {
-		t.Error("esc must close the prompt without a rerun")
+		t.Error("esc must close the prompt without a restart")
 	}
 
 	nm.input.SetValue("one two")
@@ -128,7 +128,7 @@ func TestRerunPrompt(t *testing.T) {
 		t.Errorf("target = %+v, want example.com:22", good.target)
 	}
 	if good.generation != 1 || cmd == nil {
-		t.Error("commit must rerun")
+		t.Error("commit must restart")
 	}
 }
 
@@ -220,7 +220,7 @@ func TestBatchedRunesReplayed(t *testing.T) {
 	u, _ := m.Update(keyMsg("xxr"))
 	nm := asModel(t, u)
 	if !nm.entering {
-		t.Error("batched xxr not replayed; trailing r should open the rerun prompt")
+		t.Error("batched xxr not replayed; trailing r should open the restart prompt")
 	}
 }
 

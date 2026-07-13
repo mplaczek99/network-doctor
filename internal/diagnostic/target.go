@@ -38,7 +38,7 @@ func (p Proto) String() string {
 // endpoint Port (explicit > scheme default > 443) and the Proto of the
 // protocol rows (explicit scheme wins; else inferred from the effective port).
 type Target struct {
-	Raw          string // original CLI spelling, echoed back in the rerun prompt
+	Raw          string // original CLI spelling, echoed back in the restart prompt
 	Host         string
 	IP           net.IP // set iff IsLiteral
 	Port         int

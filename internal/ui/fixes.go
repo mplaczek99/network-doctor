@@ -5,7 +5,7 @@ import "github.com/heymaikol/network-doctor/internal/diagnostic"
 // fixFor returns the automatic fix command for a failed probe on goos, or nil
 // when no safe local fix exists (target TCP/TLS/HTTP failures are remote
 // problems). Fixes are deliberately mild — no sudo, no config rewrites, just
-// flush a cache or re-enable networking. The rerun that follows the fix is the
+// flush a cache or re-enable networking. The restart that follows the fix is the
 // real verdict, so a fix that turns out to be a no-op is harmless.
 func fixFor(id diagnostic.ProbeID, goos string) *Tool {
 	quote := shellArgs
