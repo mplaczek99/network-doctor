@@ -447,7 +447,7 @@ func (m model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handled here scrolls the viewport; leaving the bottom disables follow mode.
 func (m model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "q":
+	case "esc":
 		m.viewing = false
 		return m, nil
 	case "home":
@@ -1128,7 +1128,7 @@ func (m model) outputView() string {
 	b.WriteString(m.jobStatusLine() + "\n")
 	b.WriteString(m.vp.View() + "\n")
 	b.WriteString(faintStyle.Render(m.vpContext()) + "\n")
-	footer := helpKeys(m.width, "↑/↓", "scroll", "pgup/pgdn", "page", "home/end", "top/bottom", "esc", "back", "q", "back")
+	footer := helpKeys(m.width, "↑/↓", "scroll", "pgup/pgdn", "page", "home/end", "top/bottom", "esc", "back")
 	if m.notice == ctrlCNotice {
 		footer = m.noticeView()
 	}

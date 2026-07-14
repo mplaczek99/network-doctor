@@ -191,16 +191,24 @@ func TestQuit(t *testing.T) {
 	}
 }
 
-func TestViewerQGoesBack(t *testing.T) {
+func TestViewerOnlyEscGoesBack(t *testing.T) {
 	m := newModel(nil, false)
 	m.jobStatus = JobDone
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	nm := asModel(t, u)
+	if got := nm.View(); !strings.Contains(got, keyStyle.Render("esc")) || strings.Contains(got, keyStyle.Render("q")) {
+		t.Errorf("viewer footer must offer only esc back, got %q", got)
+	}
 
 	u, cmd := nm.Update(keyMsg("q"))
 	nm = asModel(t, u)
+	if !nm.viewing || cmd != nil {
+		t.Error("q in viewer must do nothing")
+	}
+	u, cmd = nm.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	nm = asModel(t, u)
 	if nm.viewing || cmd != nil {
-		t.Error("q in viewer must go back without quitting")
+		t.Error("esc in viewer must go back")
 	}
 }
 
