@@ -52,13 +52,13 @@ func TestNmapConfirmGate(t *testing.T) {
 	if !strings.Contains(nm.View(), "nmap ") {
 		t.Error("confirm gate must show the nmap command before running")
 	}
-	u, _ = nm.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	u, _ = nm.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	nm = asModel(t, u)
 	if nm.confirmTool != nil {
-		t.Error("esc must close the confirm gate")
+		t.Error("ctrl+c must close the confirm gate")
 	}
 	if nm.activeJob != nil {
-		t.Error("esc must not launch a scan")
+		t.Error("ctrl+c must not launch a scan")
 	}
 }
 
@@ -191,21 +191,39 @@ func TestQuit(t *testing.T) {
 	}
 }
 
-func TestCtrlCDoesNotQuitOrCancel(t *testing.T) {
+func TestCtrlCWarnsThenQuits(t *testing.T) {
 	m := newModel(nil, false)
 	canceled := false
 	m.activeJob = &job{cancel: func() { canceled = true }}
 
 	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	nm := asModel(t, u)
-	if cmd != nil {
-		t.Fatal("ctrl+c must not return a command")
+	if cmd == nil {
+		t.Fatal("first ctrl+c must schedule the notice timeout")
 	}
 	if canceled {
-		t.Error("ctrl+c must not cancel the active job")
+		t.Error("first ctrl+c must not cancel the active job")
 	}
 	if nm.pending != nil {
-		t.Errorf("ctrl+c pending action = %v, want nil", nm.pending.kind)
+		t.Errorf("first ctrl+c pending action = %v, want nil", nm.pending.kind)
+	}
+	if !strings.Contains(nm.View(), "Press q to quit") {
+		t.Error("first ctrl+c must show the quit hint")
+	}
+
+	expired, _ := nm.Update(ctrlCNoticeDoneMsg{deadline: nm.ctrlCDeadline})
+	if strings.Contains(asModel(t, expired).View(), "Press q to quit") {
+		t.Error("quit hint must clear after the timeout")
+	}
+
+	nm.activeJob = nil
+	u, cmd = nm.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	_ = asModel(t, u)
+	if cmd == nil {
+		t.Fatal("second ctrl+c must quit")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Errorf("second ctrl+c command = %T, want tea.QuitMsg", cmd())
 	}
 }
 

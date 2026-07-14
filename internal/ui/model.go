@@ -24,6 +24,8 @@ import (
 // gen. A stale gen is ignored.
 type scheduleMsg struct{ gen int }
 
+type ctrlCNoticeDoneMsg struct{ deadline time.Time }
+
 // probeDoneMsg carries a finished probe's result. Accepted only when gen matches.
 type probeDoneMsg struct {
 	id  diagnostic.ProbeID
@@ -52,6 +54,8 @@ type pendingAction struct {
 const (
 	maxJobLines  = 5000 // ring-buffer cap: older lines become a "discarded" count, not a memory bill
 	jobTailLines = 14   // main-screen tail fallback when the terminal height is unknown
+	ctrlCWindow  = 2 * time.Second
+	ctrlCNotice  = "Press q to quit"
 )
 
 // outLine is one captured output line tagged with its source stream. Lines are
@@ -117,10 +121,10 @@ type model struct {
 
 	toolbox bool // --toolbox: chain deferred until 'r'
 
-	// notice is one-line feedback from the last export (y/w): saved path,
-	// copy confirmation, or the error. Sticky until the next export or restart.
-	notice   string
-	noticeOK bool
+	// notice is one-line feedback from export or the Ctrl+C quit hint.
+	notice        string
+	noticeOK      bool
+	ctrlCDeadline time.Time
 
 	width, height int
 }
@@ -204,8 +208,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if msg.Type == tea.KeyCtrlC && m.confirmTool != nil {
+			return m.handleConfirmKey(msg)
+		}
 		if msg.Type == tea.KeyCtrlC {
-			return m, nil
+			now := time.Now()
+			if now.Before(m.ctrlCDeadline) {
+				return m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+			}
+			m.ctrlCDeadline = now.Add(ctrlCWindow)
+			m.notice, m.noticeOK = ctrlCNotice, false
+			deadline := m.ctrlCDeadline
+			return m, tea.Tick(ctrlCWindow, func(time.Time) tea.Msg {
+				return ctrlCNoticeDoneMsg{deadline: deadline}
+			})
 		}
 		// Runes read from stdin in one batch arrive as a single KeyMsg
 		// ("jjj"), which matches no binding; replay them one key at a time.
@@ -229,6 +245,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleViewKey(msg)
 		}
 		return m.handleKey(msg)
+
+	case ctrlCNoticeDoneMsg:
+		if msg.deadline == m.ctrlCDeadline {
+			m.ctrlCDeadline = time.Time{}
+			if m.notice == ctrlCNotice {
+				m.notice = ""
+			}
+		}
+		return m, nil
 
 	case scheduleMsg:
 		if msg.gen != m.generation {
@@ -913,7 +938,11 @@ func (m model) promptView(withForms bool) string {
 	// 88, not 76: the longest target-form line needs ~86 content cols to
 	// render unwrapped on wide terminals.
 	w := max(min(m.width-2, 88), 24)
-	return focusPanelStyle.Width(w).Render(body) + "\n" + helpKeys(m.width, "enter", "run", "esc", "back")
+	footer := helpKeys(m.width, "enter", "run", "esc", "back")
+	if m.notice == ctrlCNotice {
+		footer = m.noticeView()
+	}
+	return focusPanelStyle.Width(w).Render(body) + "\n" + footer
 }
 
 func (m model) helpView(deferred bool) string {
@@ -942,14 +971,23 @@ func (m model) helpView(deferred bool) string {
 	}
 	kv = append(kv, "r", "restart", "q", "quit")
 	help := helpKeys(m.width, kv...)
-	if m.notice != "" {
-		n := failStyle.Render("✗ " + m.notice)
-		if m.noticeOK {
-			n = passStyle.Render("✓ " + m.notice)
-		}
-		help = n + "\n" + help
+	if notice := m.noticeView(); notice != "" {
+		help = notice + "\n" + help
 	}
 	return help
+}
+
+func (m model) noticeView() string {
+	if m.notice == "" {
+		return ""
+	}
+	if m.notice == ctrlCNotice {
+		return warnStyle.Render("! " + m.notice)
+	}
+	if m.noticeOK {
+		return passStyle.Render("✓ " + m.notice)
+	}
+	return failStyle.Render("✗ " + m.notice)
 }
 
 // banner is the full-width guidance block under the header: what is happening,
@@ -1065,7 +1103,11 @@ func (m model) outputView() string {
 	b.WriteString(m.jobStatusLine() + "\n")
 	b.WriteString(m.vp.View() + "\n")
 	b.WriteString(faintStyle.Render(m.vpContext()) + "\n")
-	b.WriteString(helpKeys(m.width, "↑/↓", "scroll", "pgup/pgdn", "page", "esc", "back", "q", "quit"))
+	footer := helpKeys(m.width, "↑/↓", "scroll", "pgup/pgdn", "page", "esc", "back", "q", "quit")
+	if m.notice == ctrlCNotice {
+		footer = m.noticeView()
+	}
+	b.WriteString(footer)
 	return b.String()
 }
 
