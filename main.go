@@ -55,15 +55,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "network-doctor: unexpected arguments: %v\n", positional[1:])
 		return 2
 	}
+	if *showVersion {
+		fmt.Fprintln(stdout, "network-doctor", version)
+		return 0
+	}
 	if *timeout <= 0 {
 		fmt.Fprintln(stderr, "network-doctor: -timeout must be positive")
 		return 2
 	}
 	diagnostic.ProbeTimeout = *timeout
-	if *showVersion {
-		fmt.Fprintln(stdout, "network-doctor", version)
-		return 0
-	}
 	if *jsonOut && *toolbox {
 		fmt.Fprintln(stderr, "network-doctor: -json and -toolbox cannot be combined")
 		return 2

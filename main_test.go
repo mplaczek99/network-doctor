@@ -24,7 +24,8 @@ func TestRun(t *testing.T) {
 		{"extra args", []string{"example.com", "extra"}, 2, "", "unexpected arguments"},
 		{"bad target", []string{"bad_host!"}, 2, "", "network-doctor:"},
 		{"json+toolbox", []string{"-json", "-toolbox"}, 2, "", "cannot be combined"},
-		{"bad timeout", []string{"-timeout", "-1s", "-version"}, 2, "", "-timeout must be positive"},
+		{"version ignores bad timeout", []string{"-timeout", "-1s", "-version"}, 0, "network-doctor dev", ""},
+		{"bad timeout", []string{"-timeout", "-1s"}, 2, "", "-timeout must be positive"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
