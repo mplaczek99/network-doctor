@@ -265,7 +265,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ctrlCNoticeDoneMsg:
-		if msg.deadline == m.ctrlCDeadline {
+		if msg.deadline.Equal(m.ctrlCDeadline) {
 			m.ctrlCDeadline = time.Time{}
 			if m.notice == ctrlCNotice {
 				m.notice = ""
