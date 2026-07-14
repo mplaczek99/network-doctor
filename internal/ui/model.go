@@ -150,7 +150,8 @@ var (
 	}
 )
 
-func newModel(t *diagnostic.Target, toolbox bool) model {
+// New constructs the terminal application.
+func New(t *diagnostic.Target, toolbox bool) tea.Model {
 	probes := diagnostic.BuildProbes(t)
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
@@ -812,7 +813,7 @@ func (m model) bodyView(deferred bool) string {
 		probe := m.probes[m.selected]
 		right.WriteString(panelTitleStyle.Render("Details — "+probe.Name) + "\n")
 		if r, ok := m.results[probe.ID]; ok {
-			right.WriteString(styledProbeStatus(r.Status) + " — " + r.Detail + "\n")
+			right.WriteString(styled(r.Status) + " — " + r.Detail + "\n")
 			if (r.Status == diagnostic.StatusFail || r.Status == diagnostic.StatusWarn) && r.Fix != "" {
 				right.WriteString(skipStyle.Render("Fix: ") + r.Fix + "\n")
 			}
@@ -1033,19 +1034,13 @@ func (m model) nextStep(id diagnostic.ProbeID) string {
 	}
 	for _, t := range m.tools {
 		if t.Key == key && t.Available() {
-			return "Next: press " + selStyle.Render(key) + " — " + toolPurpose[key] + " (" + t.Name + ")"
+			return "Next: press " + selStyle.Render(key) + " — " + t.Purpose + " (" + t.Name + ")"
 		}
 	}
 	return ""
 }
 
-func styledProbeStatus(s diagnostic.Status) string {
-	return statusStyles[s].Render(s.String())
-}
-
-// styledStatus colors the job status word: green done, red failed/timed out,
-// yellow canceled.
-func styledStatus(s JobStatus) string {
+func styled(s fmt.Stringer) string {
 	return statusStyles[s].Render(s.String())
 }
 
@@ -1053,7 +1048,7 @@ func styledStatus(s JobStatus) string {
 // output viewer: a live spinner + timer while running, the total duration
 // once the job has finished.
 func (m model) jobStatusLine() string {
-	s := faintStyle.Render(m.jobName+" — ") + styledStatus(m.jobStatus)
+	s := faintStyle.Render(m.jobName+" — ") + styled(m.jobStatus)
 	if m.activeJob != nil {
 		return s + " " + m.spinner.View() + faintStyle.Render(fmt.Sprintf(" %.0fs", time.Since(m.jobStart).Seconds()))
 	}
@@ -1103,19 +1098,6 @@ func (m model) vpContext() string {
 	return s
 }
 
-// toolPurpose is the plain-English toolbox label per hotkey. Hotkeys are
-// stable across OSes; the real command is shown in the job pane once run.
-var toolPurpose = map[string]string{
-	"i": "route table",
-	"s": "open sockets",
-	"p": "ping the host",
-	"d": "DNS lookup",
-	"c": "web check",
-	"t": "trace the path",
-	"m": "path quality",
-	"n": "port scan",
-}
-
 // progressBar is a w-cell block bar, filled proportionally to done/total.
 func progressBar(done, total, w int) string {
 	if total <= 0 || w <= 0 {
@@ -1131,14 +1113,10 @@ func (m model) toolboxView() string {
 	}
 	parts := make([]string, len(m.tools))
 	for i, t := range m.tools {
-		purpose := toolPurpose[t.Key]
-		if purpose == "" {
-			purpose = t.Name
-		}
 		if t.Available() {
-			parts[i] = keyStyle.Render("["+t.Key+"]") + " " + purpose
+			parts[i] = keyStyle.Render("["+t.Key+"]") + " " + t.Purpose
 		} else {
-			parts[i] = faintStyle.Render("[" + t.Key + "] " + purpose + " — " + t.Bin + " missing")
+			parts[i] = faintStyle.Render("[" + t.Key + "] " + t.Purpose + " — " + t.Bin + " missing")
 		}
 	}
 	// The title rides on the first chip so line 1's width math includes it;

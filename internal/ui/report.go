@@ -1,12 +1,12 @@
 package ui
 
 import (
-	"encoding/base64"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/aymanbagabas/go-osc52/v2"
 	"github.com/heymaikol/network-doctor/internal/diagnostic"
 	"github.com/heymaikol/network-doctor/internal/textsafe"
 )
@@ -24,24 +24,20 @@ func exportReport(rep string, save bool) (notice string, ok bool) {
 	}
 	// stderr, because Bubble Tea owns stdout: both reach the tty, but only one
 	// of them is fighting the renderer for it mid-frame.
-	if _, err := fmt.Fprint(os.Stderr, osc52Sequence(rep)); err != nil {
+	if _, err := osc52.New(rep).Mode(osc52Mode()).WriteTo(os.Stderr); err != nil {
 		return "copy failed: " + err.Error(), false
 	}
 	return "report copied to clipboard (terminal must support OSC 52)", true
 }
 
-// osc52Sequence wraps OSC 52 in the multiplexer-specific DCS passthrough
-// required for the containing terminal to receive it. TMUX takes precedence
-// when both environment markers are present, matching conventional detection.
-func osc52Sequence(rep string) string {
-	osc := "\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte(rep)) + "\x07"
+func osc52Mode() osc52.Mode {
 	switch {
 	case os.Getenv("TMUX") != "":
-		return "\x1bPtmux;\x1b" + osc + "\x1b\\"
+		return osc52.TmuxMode
 	case os.Getenv("STY") != "":
-		return "\x1bP" + osc + "\x1b\\"
+		return osc52.ScreenMode
 	default:
-		return osc
+		return osc52.DefaultMode
 	}
 }
 

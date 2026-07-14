@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
@@ -9,29 +8,28 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aymanbagabas/go-osc52/v2"
 	"github.com/heymaikol/network-doctor/internal/diagnostic"
 )
 
-func TestOSC52Sequence(t *testing.T) {
-	payload := base64.StdEncoding.EncodeToString([]byte("report"))
-	osc := "\x1b]52;c;" + payload + "\x07"
+func TestOSC52Mode(t *testing.T) {
 	tests := []struct {
 		name string
 		tmux string
 		sty  string
-		want string
+		want osc52.Mode
 	}{
-		{name: "terminal", want: osc},
-		{name: "tmux", tmux: "/tmp/tmux-1000/default,1,0", want: "\x1bPtmux;\x1b" + osc + "\x1b\\"},
-		{name: "screen", sty: "1234.pts-0.host", want: "\x1bP" + osc + "\x1b\\"},
-		{name: "nested prefers tmux", tmux: "tmux", sty: "screen", want: "\x1bPtmux;\x1b" + osc + "\x1b\\"},
+		{name: "terminal", want: osc52.DefaultMode},
+		{name: "tmux", tmux: "tmux", want: osc52.TmuxMode},
+		{name: "screen", sty: "screen", want: osc52.ScreenMode},
+		{name: "nested prefers tmux", tmux: "tmux", sty: "screen", want: osc52.TmuxMode},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("TMUX", tt.tmux)
 			t.Setenv("STY", tt.sty)
-			if got := osc52Sequence("report"); got != tt.want {
-				t.Errorf("osc52Sequence() = %q, want %q", got, tt.want)
+			if got := osc52Mode(); got != tt.want {
+				t.Errorf("osc52Mode() = %v, want %v", got, tt.want)
 			}
 		})
 	}

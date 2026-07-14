@@ -48,6 +48,9 @@ func TestToolsForDefinitions(t *testing.T) {
 	}
 	for i, w := range wantHost {
 		tool := got[i]
+		if tool.Purpose == "" {
+			t.Errorf("tool[%d] %s has no purpose", i, tool.Key)
+		}
 		if tool.Key != w.key || tool.Name != w.name || tool.Bin != w.bin {
 			t.Errorf("tool[%d] = {Key:%q Name:%q Bin:%q}, want {%q %q %q}", i, tool.Key, tool.Name, tool.Bin, w.key, w.name, w.bin)
 		}
