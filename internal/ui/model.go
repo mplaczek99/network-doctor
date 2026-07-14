@@ -361,12 +361,12 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		ti.CursorEnd()
 		m.input = ti
 		return m, textinput.Blink
-	case "up":
+	case "up", "k":
 		if m.selected > 0 {
 			m.selected--
 		}
 		return m, nil
-	case "down":
+	case "down", "j":
 		if m.selected < len(m.probes)-1 {
 			m.selected++
 		}
