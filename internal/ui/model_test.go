@@ -191,6 +191,19 @@ func TestQuit(t *testing.T) {
 	}
 }
 
+func TestViewerQGoesBack(t *testing.T) {
+	m := newModel(nil, false)
+	m.jobStatus = JobDone
+	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	nm := asModel(t, u)
+
+	u, cmd := nm.Update(keyMsg("q"))
+	nm = asModel(t, u)
+	if nm.viewing || cmd != nil {
+		t.Error("q in viewer must go back without quitting")
+	}
+}
+
 func TestCtrlCWarnsThenQuits(t *testing.T) {
 	m := newModel(nil, false)
 	canceled := false
