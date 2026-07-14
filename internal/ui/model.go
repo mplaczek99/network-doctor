@@ -353,6 +353,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.entering, m.inputErr = true, ""
 		ti := textinput.New()
 		ti.Prompt = "network-doctor "
+		ti.Placeholder = "example.com:443 — empty for a general check"
 		ti.PromptStyle = keyStyle
 		if m.target != nil {
 			ti.SetValue(m.target.Raw)
