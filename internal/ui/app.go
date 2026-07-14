@@ -9,9 +9,7 @@ import (
 
 // New constructs the terminal application.
 func New(target *diagnostic.Target, toolbox bool) tea.Model {
-	m := newModel(target)
-	m.toolbox = toolbox
-	return m
+	return newModel(target, toolbox)
 }
 
 // ExitCode returns 0 in toolbox mode when the chain never ran; 1 if any probe

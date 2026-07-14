@@ -42,7 +42,7 @@ func TestReportSanitized(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := newModel(tgt)
+	m := newModel(tgt, false)
 	for _, p := range m.probes {
 		m.results[p.ID] = diagnostic.ProbeResult{ID: p.ID, Status: diagnostic.StatusPass, Detail: "ok"}
 	}
@@ -96,7 +96,7 @@ func TestReportBracketsIPv6(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := newModel(tgt)
+	m := newModel(tgt, false)
 	for _, p := range m.probes {
 		m.results[p.ID] = diagnostic.ProbeResult{ID: p.ID, Status: diagnostic.StatusPass}
 	}
@@ -106,7 +106,7 @@ func TestReportBracketsIPv6(t *testing.T) {
 }
 
 func TestReportVerdictPass(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	for _, p := range m.probes {
 		m.results[p.ID] = diagnostic.ProbeResult{ID: p.ID, Status: diagnostic.StatusPass}
 	}

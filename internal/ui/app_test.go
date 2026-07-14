@@ -22,11 +22,10 @@ func TestNewAndExitCode(t *testing.T) {
 
 // Init returns a non-nil command in both modes (the spinner tick must always run).
 func TestInit(t *testing.T) {
-	if newModel(nil).Init() == nil {
+	if newModel(nil, false).Init() == nil {
 		t.Error("normal Init must return a cmd")
 	}
-	tb := newModel(nil)
-	tb.toolbox = true
+	tb := newModel(nil, true)
 	if tb.Init() == nil {
 		t.Error("toolbox Init must still return the spinner tick")
 	}

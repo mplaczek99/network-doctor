@@ -19,7 +19,7 @@ func mustTarget(t *testing.T, s string) *diagnostic.Target {
 // Generic mode: egress, proxy egress, and DNS are siblings — an egress
 // failure must not skip DNS, so DNS-down-but-internet-up remains diagnosable.
 func TestSiblingIndependence(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{ID: diagnostic.ProbeIface, Status: diagnostic.StatusPass}
 	m.started[diagnostic.ProbeIface] = true
 	cmds := m.scheduleStep()
@@ -35,7 +35,7 @@ func TestSiblingIndependence(t *testing.T) {
 }
 
 func TestSkipPropagation(t *testing.T) {
-	m := newModel(mustTarget(t, "github.com"))
+	m := newModel(mustTarget(t, "github.com"), false)
 	m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{Status: diagnostic.StatusPass}
 	m.results[diagnostic.ProbeInternet] = diagnostic.ProbeResult{Status: diagnostic.StatusPass}
 	m.results[diagnostic.ProbeDNS] = diagnostic.ProbeResult{Status: diagnostic.StatusFail}
@@ -53,7 +53,7 @@ func TestSkipPropagation(t *testing.T) {
 // skip cascade inside scheduleStep, DowngradeEgress must still run — otherwise
 // a proxy-only network shows internet FAIL in the TUI but WARN in -json.
 func TestDowngradeRunsWhenSkipsFinishRun(t *testing.T) {
-	m := newModel(mustTarget(t, "github.com:443"))
+	m := newModel(mustTarget(t, "github.com:443"), false)
 	pass := func(id diagnostic.ProbeID) {
 		m.results[id] = diagnostic.ProbeResult{ID: id, Status: diagnostic.StatusPass}
 		m.started[id] = true
@@ -80,7 +80,7 @@ func TestDowngradeRunsWhenSkipsFinishRun(t *testing.T) {
 }
 
 func TestNADoesNotBlock(t *testing.T) {
-	m := newModel(mustTarget(t, "1.1.1.1"))
+	m := newModel(mustTarget(t, "1.1.1.1"), false)
 	m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{Status: diagnostic.StatusPass}
 	m.results[diagnostic.ProbeInternet] = diagnostic.ProbeResult{Status: diagnostic.StatusPass}
 	m.results[diagnostic.ProbeDNS] = diagnostic.ProbeResult{Status: diagnostic.StatusNA, Addrs: []net.IP{net.ParseIP("1.1.1.1")}}

@@ -29,21 +29,10 @@ const (
 )
 
 func (s JobStatus) String() string {
-	switch s {
-	case JobQueued:
-		return "queued"
-	case JobRunning:
-		return "running"
-	case JobDone:
-		return "done"
-	case JobFailed:
-		return "failed"
-	case JobCanceled:
-		return "canceled"
-	case JobTimedOut:
-		return "timed out"
+	if s < JobQueued || s > JobTimedOut {
+		return "?"
 	}
-	return "?"
+	return [...]string{"queued", "running", "done", "failed", "canceled", "timed out"}[s]
 }
 
 // ToolOutputMsg is one sanitized output line. JobID+Generation identity lets

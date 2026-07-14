@@ -22,7 +22,7 @@ func keyMsg(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: 
 
 // A probeDoneMsg from a stale generation is dropped (mirrors the gen guard).
 func TestStaleProbeDropped(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	m.generation = 5
 	u, cmd := m.Update(probeDoneMsg{id: diagnostic.ProbeIface, gen: 0, res: diagnostic.ProbeResult{Status: diagnostic.StatusPass}})
 	nm := asModel(t, u)
@@ -38,7 +38,7 @@ func TestStaleProbeDropped(t *testing.T) {
 // launching; the gate shows the command, and any non-'y' key cancels without
 // ever starting a scan.
 func TestNmapConfirmGate(t *testing.T) {
-	m := newModel(mustTarget(t, "example.com:443"))
+	m := newModel(mustTarget(t, "example.com:443"), false)
 	u, cmd := m.Update(keyMsg("n"))
 	nm := asModel(t, u)
 	if nm.confirmTool == nil || nm.confirmTool.Key != "n" {
@@ -63,7 +63,7 @@ func TestNmapConfirmGate(t *testing.T) {
 // 'r' opens the restart prompt; Enter bumps the generation, clears run state,
 // and resets the context.
 func TestRestartResets(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{Status: diagnostic.StatusPass}
 	m.started[diagnostic.ProbeIface] = true
 	gen0 := m.generation
@@ -97,7 +97,7 @@ func TestRestartResets(t *testing.T) {
 // WindowSizeMsg (height 0 = size unknown), on a roomy terminal, and alongside
 // a validation error.
 func TestRestartPrompt(t *testing.T) {
-	m := newModel(mustTarget(t, "github.com"))
+	m := newModel(mustTarget(t, "github.com"), false)
 	u, _ := m.Update(keyMsg("r"))
 	nm := asModel(t, u)
 	if !nm.entering {
@@ -178,7 +178,7 @@ func TestRestartPrompt(t *testing.T) {
 }
 
 func TestQuit(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	u, cmd := m.Update(keyMsg("q"))
 	_ = asModel(t, u)
 	if cmd == nil {
@@ -190,7 +190,7 @@ func TestQuit(t *testing.T) {
 }
 
 func TestCtrlCDoesNotQuitOrCancel(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	canceled := false
 	m.activeJob = &job{cancel: func() { canceled = true }}
 
@@ -209,7 +209,7 @@ func TestCtrlCDoesNotQuitOrCancel(t *testing.T) {
 
 // scheduleMsg creates the generation context and dispatches only the root probe.
 func TestScheduleStartsRoot(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	u, cmd := m.Update(scheduleMsg{gen: 0})
 	nm := asModel(t, u)
 	if nm.ctx == nil {
@@ -227,7 +227,7 @@ func TestScheduleStartsRoot(t *testing.T) {
 }
 
 func TestSelectionClamp(t *testing.T) {
-	m := newModel(nil) // 4 rows
+	m := newModel(nil, false) // 4 rows
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
 	if asModel(t, u).selected != 0 {
 		t.Error("up at top must stay 0")
@@ -242,7 +242,7 @@ func TestSelectionClamp(t *testing.T) {
 }
 
 func TestExitCode(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	if ExitCode(m) != 1 {
 		t.Error("unfinished chain must exit 1")
 	}
@@ -261,7 +261,7 @@ func TestExitCode(t *testing.T) {
 // Runes batched into one KeyMsg by a fast stdin read ("xxr") are replayed one
 // key at a time instead of matching no binding and being dropped.
 func TestBatchedRunesReplayed(t *testing.T) {
-	m := newModel(mustTarget(t, "example.com:443"))
+	m := newModel(mustTarget(t, "example.com:443"), false)
 	u, _ := m.Update(keyMsg("xxr"))
 	nm := asModel(t, u)
 	if !nm.entering {
@@ -272,7 +272,7 @@ func TestBatchedRunesReplayed(t *testing.T) {
 // Enter opens the output viewer while a job is running even before any output
 // has arrived (e.g. mtr --report buffers everything until exit).
 func TestEnterViewerBeforeOutput(t *testing.T) {
-	m := newModel(mustTarget(t, "example.com:443"))
+	m := newModel(mustTarget(t, "example.com:443"), false)
 	m.activeJob = &job{}
 	m.jobStatus = JobRunning
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -289,7 +289,7 @@ func TestEnterViewerBeforeOutput(t *testing.T) {
 // terminal height: the renderer drops the top lines, which reads as the
 // whole UI scrolling.
 func TestViewFitsTerminal(t *testing.T) {
-	m := newModel(mustTarget(t, "example.com:443"))
+	m := newModel(mustTarget(t, "example.com:443"), false)
 	m.jobStatus = JobRunning
 	m.jobDisplay = "ping example.com"
 	for range 200 {
@@ -323,7 +323,7 @@ func TestViewFitsTerminal(t *testing.T) {
 
 // On a short terminal the forms cheatsheet is dropped but the input survives.
 func TestPromptFormsDroppedWhenShort(t *testing.T) {
-	m := newModel(mustTarget(t, "example.com:443"))
+	m := newModel(mustTarget(t, "example.com:443"), false)
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
 	nm := asModel(t, u)
 	u, _ = nm.Update(keyMsg("r"))
@@ -340,7 +340,7 @@ func TestPromptFormsDroppedWhenShort(t *testing.T) {
 // The forms never starve a live job pane below jobView's 5-row minimum: at a
 // height where they would squeeze avail to 1-4 rows, the pane wins.
 func TestPromptFormsYieldToJobPane(t *testing.T) {
-	m := newModel(mustTarget(t, "example.com:443"))
+	m := newModel(mustTarget(t, "example.com:443"), false)
 	m.jobStatus = JobRunning
 	m.jobDisplay = "ping example.com"
 	for range 200 {
@@ -363,7 +363,7 @@ func TestPromptFormsYieldToJobPane(t *testing.T) {
 // horizontally. Tested on promptView in isolation: the whole view has a
 // pre-existing wide banner out of scope here.
 func TestPromptViewNarrowNoOverflow(t *testing.T) {
-	m := newModel(mustTarget(t, "example.com:443"))
+	m := newModel(mustTarget(t, "example.com:443"), false)
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 24})
 	nm := asModel(t, u)
 	u, _ = nm.Update(keyMsg("r"))

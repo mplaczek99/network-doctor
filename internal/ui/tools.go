@@ -104,7 +104,7 @@ func toolsFor(t *diagnostic.Target, goos string) []Tool {
 	// nmap is the one advanced tool: it actively scans the target, so it's
 	// gated behind a shown-command confirmation (Confirm) rather than launching
 	// on the hotkey like everything else.
-	tools = append(tools, nmapTool(host, goos))
+	tools = append(tools, nmapTool(quote, host))
 	return tools
 }
 
@@ -118,8 +118,7 @@ func toolsFor(t *diagnostic.Target, goos string) []Tool {
 // scans only that port; otherwise the 100 most common ports. Deliberately no
 // -sV/-O/-A: version and OS detection are louder, slower, and not needed to
 // answer "is the port open?".
-func nmapTool(host, goos string) Tool {
-	quote := quoterFor(goos)
+func nmapTool(quote func([]string) string, host string) Tool {
 	return Tool{
 		Key: "n", Name: "nmap", Bin: "nmap", Confirm: true, Timeout: 120 * time.Second,
 		Build: func(t *diagnostic.Target) ([]string, []string, string) {

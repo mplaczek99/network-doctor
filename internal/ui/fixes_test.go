@@ -59,7 +59,7 @@ func TestFixFor(t *testing.T) {
 }
 
 func TestFixToolGating(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	if m.fixTool() != nil {
 		t.Error("an unfinished run must offer no fix")
 	}
@@ -76,7 +76,7 @@ func TestFixToolGating(t *testing.T) {
 // The fix job's terminal event restarts the chain (bumped generation, cleared
 // results) — that restart is the verification — and labels it via verifying.
 func TestFixVerifyRestart(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	m.generation = 2
 	doneResults(&m, diagnostic.ProbeDNS)
 	m.fixing = true
@@ -100,7 +100,7 @@ func TestFixVerifyRestart(t *testing.T) {
 
 // 'f' while a job streams defers the fix like any tool launch.
 func TestDeferredFix(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	m.generation = 1
 	doneResults(&m, diagnostic.ProbeDNS)
 	canceled := false
@@ -121,7 +121,7 @@ func TestDeferredFix(t *testing.T) {
 
 // A deferred fix launch marks the new job as a fix so its completion verifies.
 func TestRunPendingFixLaunches(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	tool := Tool{Key: "f", Name: "fix", Bin: os.Args[0],
 		Build: func(*diagnostic.Target) ([]string, []string, string) {
 			return []string{"-test.run=TestHelperProcess"},
@@ -145,7 +145,7 @@ func TestRunPendingFixLaunches(t *testing.T) {
 // A user-deferred action (quit/restart/tool) during a fix job wins over the
 // fix's auto-verify — no surprise restart afterwards.
 func TestPendingOverridesFix(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	m.generation = 1
 	m.fixing = true
 	m.activeJob = &job{id: "fx", cancel: func() {}}
@@ -170,14 +170,14 @@ func TestPendingOverridesFix(t *testing.T) {
 // The banner labels the verification restart's verdict and offers 'f' on a
 // fixable failure.
 func TestBannerFixVerdicts(t *testing.T) {
-	pass := newModel(nil)
+	pass := newModel(nil, false)
 	doneResults(&pass, "")
 	pass.verifying = true
 	if got := pass.banner(); !strings.Contains(got, "Fix verified") {
 		t.Errorf("all-pass verify banner = %q, want 'Fix verified'", got)
 	}
 
-	fail := newModel(nil)
+	fail := newModel(nil, false)
 	doneResults(&fail, diagnostic.ProbeDNS)
 	fail.verifying = true
 	got := fail.banner()

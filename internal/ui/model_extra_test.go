@@ -80,7 +80,7 @@ func TestToolBuildCurlScheme(t *testing.T) {
 }
 
 func TestNetworkLine(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	if got := m.networkLine(); got != "" {
 		t.Errorf("no iface result → %q, want empty", got)
 	}
@@ -99,7 +99,7 @@ func TestNetworkLine(t *testing.T) {
 }
 
 func TestGlyph(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	// No result yet → spinner view, must not panic and must be non-empty handling.
 	_ = m.glyph(diagnostic.ProbeIface)
 	cases := []struct {
@@ -217,7 +217,7 @@ func containsEnv(env []string, kv string) bool {
 // 'q' while a job runs cancels it and defers the quit; the terminal event then
 // performs it.
 func TestDeferredQuit(t *testing.T) {
-	m := newModel(mustTarget(t, "github.com"))
+	m := newModel(mustTarget(t, "github.com"), false)
 	m.generation = 3
 	canceled := false
 	m.activeJob = &job{id: "j", cancel: func() { canceled = true }}
@@ -250,7 +250,7 @@ func TestDeferredQuit(t *testing.T) {
 // Committing the restart prompt while a job runs cancels it and defers the
 // restart; the terminal event bumps the generation.
 func TestDeferredRestart(t *testing.T) {
-	m := newModel(mustTarget(t, "github.com"))
+	m := newModel(mustTarget(t, "github.com"), false)
 	m.generation = 3
 	canceled := false
 	m.activeJob = &job{id: "j", cancel: func() { canceled = true }}
@@ -286,7 +286,7 @@ func TestDeferredRestart(t *testing.T) {
 // terminal event runs the deferred restart; otherwise old results can render
 // under the new target's header and produce a false healthy verdict.
 func TestDeferredRestartDefersTargetSwap(t *testing.T) {
-	m := newModel(mustTarget(t, "github.com"))
+	m := newModel(mustTarget(t, "github.com"), false)
 	for _, probe := range m.probes {
 		m.results[probe.ID] = diagnostic.ProbeResult{ID: probe.ID, Status: diagnostic.StatusPass}
 	}
@@ -328,7 +328,7 @@ func TestDeferredRestartDefersTargetSwap(t *testing.T) {
 
 // A tool hotkey while a job runs defers the tool launch (last write wins).
 func TestDeferredTool(t *testing.T) {
-	m := newModel(mustTarget(t, "github.com"))
+	m := newModel(mustTarget(t, "github.com"), false)
 	m.generation = 1
 	canceled := false
 	m.activeJob = &job{id: "j", cancel: func() { canceled = true }}
@@ -349,7 +349,7 @@ func TestDeferredTool(t *testing.T) {
 // Output lines interleave in arrival order with their stream tag; stale
 // messages are dropped.
 func TestToolOutputRouting(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	m.generation = 1
 	m.activeJob = &job{id: "j", ch: make(chan tea.Msg, 1)}
 
@@ -383,7 +383,7 @@ func TestToolOutputRouting(t *testing.T) {
 
 // A terminal event for a stale job (wrong id/gen) is ignored.
 func TestStaleToolDoneDropped(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	m.generation = 2
 	m.activeJob = &job{id: "j", cancel: func() {}}
 	u, cmd := m.Update(ToolDoneMsg{JobID: "other", Generation: 2, Status: JobDone})
@@ -397,7 +397,7 @@ func TestStaleToolDoneDropped(t *testing.T) {
 }
 
 func TestWindowSize(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	nm := asModel(t, u)
 	if nm.width != 120 || nm.height != 40 {
@@ -409,8 +409,7 @@ func TestWindowSize(t *testing.T) {
 // generation context instead of panicking on a nil parent (pre-existing bug,
 // Codex round 2).
 func TestToolboxLaunchBeforeRun(t *testing.T) {
-	m := newModel(nil)
-	m.toolbox = true
+	m := newModel(nil, true)
 	if m.ctx != nil {
 		t.Fatal("precondition: toolbox model must start with a nil ctx")
 	}
@@ -436,7 +435,7 @@ func TestToolboxLaunchBeforeRun(t *testing.T) {
 
 // launchTool on a missing binary fails gracefully with an install hint and no cmd.
 func TestLaunchToolUnavailable(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	m.jobDropped = 7
 	m.jobEvicted = 9
 	tool := Tool{
@@ -459,7 +458,7 @@ func TestLaunchToolUnavailable(t *testing.T) {
 }
 
 func TestLaunchToolStartErrorClearsPreviousJobState(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	m.jobDropped = 7
 	m.jobEvicted = 9
 	name := "bad-tool"
@@ -495,7 +494,7 @@ func TestLaunchToolStartErrorClearsPreviousJobState(t *testing.T) {
 // ---- render smoke tests (must not panic; show key labels) ----
 
 func TestViewRenders(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	out := m.View()
 	for _, want := range []string{"Network Doctor", "Checks", "Details"} {
 		if !strings.Contains(out, want) {
@@ -503,20 +502,19 @@ func TestViewRenders(t *testing.T) {
 		}
 	}
 
-	tb := newModel(nil)
-	tb.toolbox = true
+	tb := newModel(nil, true)
 	if !strings.Contains(tb.View(), "check your connection") {
 		t.Error("deferred toolbox view must explain itself")
 	}
 
-	job := newModel(mustTarget(t, "github.com"))
+	job := newModel(mustTarget(t, "github.com"), false)
 	job.jobStatus, job.jobName, job.jobDisplay = JobDone, "ping", "ping github.com"
 	job.jobLines = []outLine{{false, "64 bytes from ..."}}
 	if !strings.Contains(job.View(), "$ ping github.com") {
 		t.Error("job view must show the command line")
 	}
 
-	net := newModel(nil)
+	net := newModel(nil, false)
 	net.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{Status: diagnostic.StatusPass, Network: "HomeWiFi"}
 	if !strings.Contains(net.View(), "Wi-Fi: HomeWiFi") {
 		t.Error("view must show the connected network")
@@ -526,7 +524,7 @@ func TestViewRenders(t *testing.T) {
 // Enter opens the output viewport in follow mode; scrolling up pauses follow
 // and new output must not yank the view back down; esc closes it.
 func TestViewportFollow(t *testing.T) {
-	m := newModel(nil)
+	m := newModel(nil, false)
 	m.width, m.height = 80, 10 // viewport height 6 — 20 lines overflow it
 	m.generation = 1
 	m.activeJob = &job{id: "j", ch: make(chan tea.Msg, 1)}

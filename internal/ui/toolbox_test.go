@@ -37,8 +37,7 @@ func TestToolHotkeysUnique(t *testing.T) {
 
 // Toolbox mode with no chain run exits 0.
 func TestToolboxExitZero(t *testing.T) {
-	m := newModel(nil)
-	m.toolbox = true
+	m := newModel(nil, true)
 	if ExitCode(m) != 0 {
 		t.Error("toolbox mode, no chain run, must exit 0")
 	}

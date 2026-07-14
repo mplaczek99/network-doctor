@@ -39,19 +39,10 @@ const (
 )
 
 func (s Status) String() string {
-	switch s {
-	case StatusPass:
-		return "PASS"
-	case StatusWarn:
-		return "WARN"
-	case StatusFail:
-		return "FAIL"
-	case StatusSkip:
-		return "SKIP"
-	case StatusNA:
-		return "N/A"
+	if s < StatusPass || s > StatusNA {
+		return "?"
 	}
-	return "?"
+	return [...]string{"PASS", "WARN", "FAIL", "SKIP", "N/A"}[s]
 }
 
 // Attempt is one connection attempt against a single address.

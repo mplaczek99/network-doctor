@@ -143,9 +143,14 @@ var (
 	panelStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(borderColor).Padding(0, 1)
 	focusPanelStyle = panelStyle.BorderForeground(accentColor) // input focus lives here
 	panelTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
+	statusStyles    = map[fmt.Stringer]lipgloss.Style{
+		diagnostic.StatusPass: passStyle, diagnostic.StatusWarn: warnStyle,
+		diagnostic.StatusFail: failStyle, diagnostic.StatusSkip: skipStyle, diagnostic.StatusNA: faintStyle,
+		JobDone: passStyle, JobFailed: failStyle, JobTimedOut: failStyle, JobCanceled: skipStyle,
+	}
 )
 
-func newModel(t *diagnostic.Target) model {
+func newModel(t *diagnostic.Target, toolbox bool) model {
 	probes := diagnostic.BuildProbes(t)
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
@@ -158,6 +163,7 @@ func newModel(t *diagnostic.Target) model {
 		tools:     toolsFor(t, runtime.GOOS),
 		jobStatus: JobQueued,
 		spinner:   sp,
+		toolbox:   toolbox,
 		width:     100, // placeholder until the terminal introduces itself (WindowSizeMsg)
 	}
 }
@@ -700,19 +706,14 @@ func (m model) glyph(id diagnostic.ProbeID) string {
 	if !ok {
 		return m.spinner.View()
 	}
-	switch r.Status {
-	case diagnostic.StatusPass:
-		return passStyle.Render("✓")
-	case diagnostic.StatusWarn:
-		return warnStyle.Render("!")
-	case diagnostic.StatusFail:
-		return failStyle.Render("✗")
-	case diagnostic.StatusSkip:
-		return skipStyle.Render("⊘")
-	case diagnostic.StatusNA:
-		return faintStyle.Render("–")
+	return statusStyles[r.Status].Render(probeGlyph(r.Status))
+}
+
+func probeGlyph(s diagnostic.Status) string {
+	if s < diagnostic.StatusPass || s > diagnostic.StatusNA {
+		return "?"
 	}
-	return "?"
+	return [...]string{"✓", "!", "✗", "⊘", "–"}[s]
 }
 
 // networkLine is the connected-network label shown under the title: the Wi-Fi
@@ -1039,31 +1040,13 @@ func (m model) nextStep(id diagnostic.ProbeID) string {
 }
 
 func styledProbeStatus(s diagnostic.Status) string {
-	switch s {
-	case diagnostic.StatusPass:
-		return passStyle.Render(s.String())
-	case diagnostic.StatusWarn:
-		return warnStyle.Render(s.String())
-	case diagnostic.StatusFail:
-		return failStyle.Render(s.String())
-	case diagnostic.StatusSkip:
-		return skipStyle.Render(s.String())
-	}
-	return s.String()
+	return statusStyles[s].Render(s.String())
 }
 
 // styledStatus colors the job status word: green done, red failed/timed out,
 // yellow canceled.
 func styledStatus(s JobStatus) string {
-	switch s {
-	case JobDone:
-		return passStyle.Render(s.String())
-	case JobFailed, JobTimedOut:
-		return failStyle.Render(s.String())
-	case JobCanceled:
-		return skipStyle.Render(s.String())
-	}
-	return s.String()
+	return statusStyles[s].Render(s.String())
 }
 
 // jobStatusLine is the "name — status" line shared by the job pane and the
