@@ -246,6 +246,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m.handleKey(msg)
 
+	case tea.MouseMsg:
+		if m.viewing {
+			var cmd tea.Cmd
+			m.vp, cmd = m.vp.Update(msg)
+			m.follow = m.vp.AtBottom()
+			return m, cmd
+		}
+		if msg.Action != tea.MouseActionPress {
+			return m, nil
+		}
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			return m.handleKey(tea.KeyMsg{Type: tea.KeyUp})
+		case tea.MouseButtonWheelDown:
+			return m.handleKey(tea.KeyMsg{Type: tea.KeyDown})
+		}
+		return m, nil
+
 	case ctrlCNoticeDoneMsg:
 		if msg.deadline == m.ctrlCDeadline {
 			m.ctrlCDeadline = time.Time{}

@@ -543,10 +543,10 @@ func TestViewportFollow(t *testing.T) {
 		t.Errorf("viewport must show the newest line and a position context, got:\n%s", out)
 	}
 
-	u, _ = nm.Update(tea.KeyMsg{Type: tea.KeyUp})
+	u, _ = nm.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp})
 	nm = asModel(t, u)
 	if nm.follow {
-		t.Error("scrolling up must pause follow mode")
+		t.Error("wheel up must pause follow mode")
 	}
 
 	u, _ = nm.Update(ToolOutputMsg{JobID: "j", Generation: 1, Stderr: true, Line: "boom"})

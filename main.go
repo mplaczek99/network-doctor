@@ -83,7 +83,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runJSON(t, stdout, stderr)
 	}
 
-	p := tea.NewProgram(ui.New(t, *toolbox), tea.WithAltScreen())
+	p := tea.NewProgram(ui.New(t, *toolbox), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	final, err := p.Run()
 	if err != nil {
 		fmt.Fprintln(stderr, "network-doctor:", err)
