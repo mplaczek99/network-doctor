@@ -11,6 +11,7 @@ func TestParseTarget(t *testing.T) {
 		literal bool
 	}{
 		{"github.com", "github.com", 443, ProtoTLSHTTP, false},
+		{"example.com.", "example.com.", 443, ProtoTLSHTTP, false},
 		{"github.com:22", "github.com", 22, ProtoSSH, false},
 		{"https://github.com", "github.com", 443, ProtoTLSHTTP, false},
 		{"http://example.com", "example.com", 80, ProtoHTTP, false},

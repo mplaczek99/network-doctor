@@ -134,7 +134,8 @@ func ParseTarget(raw string) (*Target, error) {
 		}
 		t.Host = host
 	} else {
-		if len(host) > 253 || !hostnameRe.MatchString(host) {
+		name := strings.TrimSuffix(host, ".")
+		if len(name) > 253 || !hostnameRe.MatchString(name) {
 			return nil, fmt.Errorf("invalid hostname %q", host)
 		}
 		t.Host = host
