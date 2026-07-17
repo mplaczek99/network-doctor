@@ -178,8 +178,10 @@ func (m model) reportReady() bool {
 }
 
 // spinnerActive reports whether the spinner tick chain should keep running:
-// while probes are pending or a drill-down job is live.
-func (m model) spinnerActive() bool { return !m.allDone() || m.activeJob != nil }
+// while a started probe chain is pending or a drill-down job is live.
+func (m model) spinnerActive() bool {
+	return ((!m.toolbox || m.generation > 0 || m.chainRan()) && !m.allDone()) || m.activeJob != nil
+}
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
