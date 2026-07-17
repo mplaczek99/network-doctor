@@ -238,12 +238,12 @@ func TestCtrlCWarnsThenQuits(t *testing.T) {
 	if nm.pending != nil {
 		t.Errorf("first ctrl+c pending action = %v, want nil", nm.pending.kind)
 	}
-	if !strings.Contains(nm.View(), "Press q to quit") {
+	if !strings.Contains(nm.View(), "Press Ctrl+C again (or q) to quit") {
 		t.Error("first ctrl+c must show the quit hint")
 	}
 
 	expired, _ := nm.Update(noticeDoneMsg{deadline: nm.ctrlCDeadline})
-	if strings.Contains(asModel(t, expired).View(), "Press q to quit") {
+	if strings.Contains(asModel(t, expired).View(), "Press Ctrl+C again (or q) to quit") {
 		t.Error("quit hint must clear after the timeout")
 	}
 
