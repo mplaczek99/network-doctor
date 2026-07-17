@@ -23,24 +23,18 @@ type Tool struct {
 	// inherit), and a human-display command string (shell-quoted, display only).
 	Build func(t *diagnostic.Target) (args, env []string, display string)
 
-	available, availabilityChecked bool
+	available bool
 }
 
 var toolLookPath = exec.LookPath
 
 // Available reports whether the tool's binary is installed.
-func (t Tool) Available() bool {
-	if t.availabilityChecked {
-		return t.available
-	}
-	_, err := toolLookPath(t.Bin)
-	return err == nil
-}
+func (t Tool) Available() bool { return t.available }
 
 func cacheAvailability(tools []Tool) []Tool {
 	for i := range tools {
 		_, err := toolLookPath(tools[i].Bin)
-		tools[i].available, tools[i].availabilityChecked = err == nil, true
+		tools[i].available = err == nil
 	}
 	return tools
 }

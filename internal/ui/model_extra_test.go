@@ -413,7 +413,7 @@ func TestToolboxLaunchBeforeRun(t *testing.T) {
 	if m.ctx != nil {
 		t.Fatal("precondition: toolbox model must start with a nil ctx")
 	}
-	tool := Tool{Key: "z", Name: "helper", Bin: os.Args[0],
+	tool := Tool{Key: "z", Name: "helper", Bin: os.Args[0], available: true,
 		Build: func(*diagnostic.Target) ([]string, []string, string) {
 			return []string{"-test.run=TestHelperProcess"},
 				append(os.Environ(), "GO_HELPER=1", "GO_HELPER_MODE=lines", "GO_HELPER_N=1"),
@@ -470,7 +470,7 @@ func TestLaunchToolStartErrorClearsPreviousJobState(t *testing.T) {
 		t.Fatal(err)
 	}
 	tool := Tool{
-		Key: "z", Name: "bad tool", Bin: bin,
+		Key: "z", Name: "bad tool", Bin: bin, available: true,
 		Build: func(*diagnostic.Target) ([]string, []string, string) { return nil, nil, "bad-tool --display" },
 	}
 	cmd := (&m).launchTool(tool)
