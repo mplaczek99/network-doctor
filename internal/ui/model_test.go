@@ -101,6 +101,28 @@ func TestRestartResets(t *testing.T) {
 	}
 }
 
+func TestRestartClosesNmapConfirmGate(t *testing.T) {
+	for _, target := range []string{"", "example.com:2222"} {
+		t.Run(target, func(t *testing.T) {
+			m := newModel(mustTarget(t, "example.com:443"), false)
+			u, _ := m.Update(keyMsg("n"))
+			m = asModel(t, u)
+
+			var next *diagnostic.Target
+			if target != "" {
+				next = mustTarget(t, target)
+			}
+			m.applyTarget(next)
+			m.doRestart()
+
+			if m.confirmTool != nil {
+				t.Fatal("restart must close the stale nmap confirmation gate")
+			}
+			m.View() // A stale gate panicked here after a targetless restart.
+		})
+	}
+}
+
 // The restart prompt: prefilled with the current target, esc cancels, a bad
 // line errors and stays open, a good line swaps the target and restarts.
 // It is titled "Restart" and shows the target-forms cheatsheet: before any
