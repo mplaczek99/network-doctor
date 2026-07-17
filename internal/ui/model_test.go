@@ -240,7 +240,7 @@ func TestCtrlCWarnsThenQuits(t *testing.T) {
 		t.Error("first ctrl+c must show the quit hint")
 	}
 
-	expired, _ := nm.Update(ctrlCNoticeDoneMsg{deadline: nm.ctrlCDeadline})
+	expired, _ := nm.Update(noticeDoneMsg{deadline: nm.ctrlCDeadline})
 	if strings.Contains(asModel(t, expired).View(), "Press q to quit") {
 		t.Error("quit hint must clear after the timeout")
 	}
@@ -253,6 +253,26 @@ func TestCtrlCWarnsThenQuits(t *testing.T) {
 	}
 	if _, ok := cmd().(tea.QuitMsg); !ok {
 		t.Errorf("second ctrl+c command = %T, want tea.QuitMsg", cmd())
+	}
+}
+
+func TestReportNoticeExpires(t *testing.T) {
+	oldLookPath, oldRun := clipboardLookPath, clipboardRun
+	t.Cleanup(func() { clipboardLookPath, clipboardRun = oldLookPath, oldRun })
+	clipboardLookPath = func(string) (string, error) { return "wl-copy", nil }
+	clipboardRun = func(string, []string, string) error { return nil }
+
+	m := newModel(nil, false)
+	doneResults(&m, "")
+	u, cmd := m.Update(keyMsg("y"))
+	nm := asModel(t, u)
+	if cmd == nil || nm.notice != "report copied to clipboard" {
+		t.Fatalf("copy notice = %q, cmd nil = %v", nm.notice, cmd == nil)
+	}
+
+	expired, _ := nm.Update(noticeDoneMsg{deadline: nm.noticeDeadline})
+	if got := asModel(t, expired).notice; got != "" {
+		t.Errorf("notice after timeout = %q, want empty", got)
 	}
 }
 

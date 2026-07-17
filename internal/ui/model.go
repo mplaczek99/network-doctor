@@ -24,7 +24,7 @@ import (
 // gen. A stale gen is ignored.
 type scheduleMsg struct{ gen int }
 
-type ctrlCNoticeDoneMsg struct{ deadline time.Time }
+type noticeDoneMsg struct{ deadline time.Time }
 
 // probeDoneMsg carries a finished probe's result. Accepted only when gen matches.
 type probeDoneMsg struct {
@@ -55,6 +55,7 @@ const (
 	maxJobLines  = 5000 // ring-buffer cap: older lines become a "discarded" count, not a memory bill
 	jobTailLines = 14   // main-screen tail fallback when the terminal height is unknown
 	ctrlCWindow  = 2 * time.Second
+	noticeWindow = 4 * time.Second
 	ctrlCNotice  = "Press q to quit"
 )
 
@@ -122,9 +123,10 @@ type model struct {
 	toolbox bool // --toolbox: chain deferred until 'r'
 
 	// notice is one-line feedback from export or the Ctrl+C quit hint.
-	notice        string
-	noticeOK      bool
-	ctrlCDeadline time.Time
+	notice         string
+	noticeOK       bool
+	noticeDeadline time.Time
+	ctrlCDeadline  time.Time
 
 	width, height int
 }
@@ -214,10 +216,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 			}
 			m.ctrlCDeadline = now.Add(ctrlCWindow)
+			m.noticeDeadline = m.ctrlCDeadline
 			m.notice, m.noticeOK = ctrlCNotice, false
 			deadline := m.ctrlCDeadline
 			return m, tea.Tick(ctrlCWindow, func(time.Time) tea.Msg {
-				return ctrlCNoticeDoneMsg{deadline: deadline}
+				return noticeDoneMsg{deadline: deadline}
 			})
 		}
 		// Runes read from stdin in one batch arrive as a single KeyMsg
@@ -261,12 +264,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case ctrlCNoticeDoneMsg:
+	case noticeDoneMsg:
 		if msg.deadline.Equal(m.ctrlCDeadline) {
 			m.ctrlCDeadline = time.Time{}
-			if m.notice == ctrlCNotice {
-				m.notice = ""
-			}
+		}
+		if msg.deadline.Equal(m.noticeDeadline) {
+			m.noticeDeadline = time.Time{}
+			m.notice = ""
 		}
 		return m, nil
 
@@ -389,7 +393,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.notice, m.noticeOK = exportReport(m.report(), msg.String() == "w")
-		return m, nil
+		m.noticeDeadline = time.Now().Add(noticeWindow)
+		deadline := m.noticeDeadline
+		return m, tea.Tick(noticeWindow, func(time.Time) tea.Msg { return noticeDoneMsg{deadline: deadline} })
 	case "f":
 		fix := m.fixTool()
 		if fix == nil || m.fixing {
