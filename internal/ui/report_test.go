@@ -89,7 +89,7 @@ func TestReportSanitized(t *testing.T) {
 		m.jobLines = append(m.jobLines, outLine{false, fmt.Sprintf("line %02d", i)})
 	}
 	m.jobLines = append(m.jobLines,
-		outLine{true, "stderr must not be reported"},
+		outLine{true, "ssh banner on stderr"},
 		outLine{false, "result 200\x1b[31m"},
 	)
 	m.jobStatus = JobDone
@@ -103,7 +103,8 @@ func TestReportSanitized(t *testing.T) {
 		"fix: restart it",
 		"attempt: 93.184.216.34 12ms refused",
 		"tool output ($ curl https://example.com)",
-		"line 02",
+		"line 03",
+		"ssh banner on stderr",
 		"result 200",
 		"curl https://example.com",
 	} {
@@ -111,13 +112,19 @@ func TestReportSanitized(t *testing.T) {
 			t.Errorf("report missing %q\n%s", want, rep)
 		}
 	}
-	for _, unwanted := range []string{"line 00", "line 01", "stderr must not be reported"} {
+	for _, unwanted := range []string{"line 00", "line 01", "line 02"} {
 		if strings.Contains(rep, unwanted) {
 			t.Errorf("report unexpectedly contains %q\n%s", unwanted, rep)
 		}
 	}
 	if strings.ContainsRune(rep, 0x1b) {
 		t.Errorf("escape byte leaked into report:\n%q", rep)
+	}
+}
+
+func TestRenderJobLineTreatsStderrAsOutput(t *testing.T) {
+	if got := renderJobLine(outLine{stderr: true, text: "SSH banner"}); got != "SSH banner" {
+		t.Errorf("renderJobLine() = %q, want unmarked stderr payload", got)
 	}
 }
 

@@ -102,20 +102,15 @@ func (m model) report() string {
 			fmt.Fprintf(&b, "        attempt: %s %dms %s\n", a.IP, a.Dur.Milliseconds(), st)
 		}
 	}
-	var stdout []string
-	for _, line := range m.jobLines {
-		if !line.stderr {
-			stdout = append(stdout, line.text)
-		}
-	}
-	if len(stdout) > 0 && (m.jobStatus == JobDone || m.jobStatus == JobFailed) {
+	if len(m.jobLines) > 0 && (m.jobStatus == JobDone || m.jobStatus == JobFailed) {
 		const reportTailLines = 15
-		if len(stdout) > reportTailLines {
-			stdout = stdout[len(stdout)-reportTailLines:]
+		lines := m.jobLines
+		if len(lines) > reportTailLines {
+			lines = lines[len(lines)-reportTailLines:]
 		}
 		fmt.Fprintf(&b, "\ntool output ($ %s):\n", textsafe.Clean(m.jobDisplay))
-		for _, line := range stdout {
-			b.WriteString("  " + textsafe.Clean(line) + "\n")
+		for _, line := range lines {
+			b.WriteString("  " + textsafe.Clean(line.text) + "\n")
 		}
 	}
 	return b.String()

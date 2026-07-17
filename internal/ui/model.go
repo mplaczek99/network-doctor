@@ -688,9 +688,8 @@ func (m *model) appendJobLine(stderr bool, text string) {
 	}
 }
 
-// jobContent renders the interleaved stream wrapped to w columns, stderr faint
-// with a "! " marker. Line numbers in the context line refer to these wrapped
-// display lines.
+// jobContent renders the interleaved stream wrapped to w columns. Line numbers
+// in the context line refer to these wrapped display lines.
 func (m model) jobContent(w int) string {
 	if len(m.jobLines) == 0 {
 		return lipgloss.NewStyle().Width(w).Render(faintStyle.Render("(no output yet)"))
@@ -706,9 +705,6 @@ func (m model) jobContent(w int) string {
 }
 
 func renderJobLine(ln outLine) string {
-	if ln.stderr {
-		return faintStyle.Render("! " + ln.text)
-	}
 	return ln.text
 }
 
