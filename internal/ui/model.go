@@ -510,11 +510,10 @@ func parseRunArgs(line string) (*diagnostic.Target, error) {
 	return diagnostic.ParseTarget(fields[0])
 }
 
-// applyTarget swaps the run target and rebuilds everything derived from it.
+// applyTarget swaps the run target and rebuilds its probes.
 func (m *model) applyTarget(t *diagnostic.Target) {
 	m.target = t
 	m.probes = diagnostic.BuildProbes(t)
-	m.tools = toolsFor(t, runtime.GOOS)
 	m.selected = 0
 }
 
@@ -556,6 +555,7 @@ func (m *model) doRestart() tea.Cmd {
 	wasTicking := m.spinnerActive()
 	m.clearCancel()
 	m.ctx = nil
+	m.tools = toolsFor(m.target, runtime.GOOS)
 	m.generation++
 	m.results = map[diagnostic.ProbeID]diagnostic.ProbeResult{}
 	m.started = map[diagnostic.ProbeID]bool{}

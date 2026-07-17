@@ -1,11 +1,47 @@
 package ui
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/heymaikol/network-doctor/internal/diagnostic"
 )
+
+func TestToolAvailabilityCachedUntilRestart(t *testing.T) {
+	oldLookPath := toolLookPath
+	t.Cleanup(func() { toolLookPath = oldLookPath })
+
+	installed, calls := true, 0
+	toolLookPath = func(bin string) (string, error) {
+		calls++
+		if installed {
+			return bin, nil
+		}
+		return "", errors.New("not found")
+	}
+
+	m := newModel(mustTarget(t, "github.com"), false)
+	initialCalls := calls
+	installed = false
+	for range 10 {
+		m.toolboxView()
+		m.nextStep(diagnostic.ProbeDNS)
+	}
+	if calls != initialCalls {
+		t.Fatalf("rendering performed %d extra LookPath calls", calls-initialCalls)
+	}
+
+	(&m).doRestart()
+	if calls != initialCalls+len(m.tools) {
+		t.Fatalf("restart LookPath calls = %d, want %d", calls-initialCalls, len(m.tools))
+	}
+	if m.tools[0].Available() {
+		t.Error("restart did not refresh cached availability")
+	}
+}
 
 // TestToolsForDefinitions pins the complete, ordered tool list returned by
 // toolsFor — Key, Name, Bin, argv, env, and display — for both the no-target and

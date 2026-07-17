@@ -22,12 +22,27 @@ type Tool struct {
 	// Build returns the argv (never a shell string), the process env (nil =
 	// inherit), and a human-display command string (shell-quoted, display only).
 	Build func(t *diagnostic.Target) (args, env []string, display string)
+
+	available, availabilityChecked bool
 }
+
+var toolLookPath = exec.LookPath
 
 // Available reports whether the tool's binary is installed.
 func (t Tool) Available() bool {
-	_, err := exec.LookPath(t.Bin)
+	if t.availabilityChecked {
+		return t.available
+	}
+	_, err := toolLookPath(t.Bin)
 	return err == nil
+}
+
+func cacheAvailability(tools []Tool) []Tool {
+	for i := range tools {
+		_, err := toolLookPath(tools[i].Bin)
+		tools[i].available, tools[i].availabilityChecked = err == nil, true
+	}
+	return tools
 }
 
 // toolsFor returns the drill-down tools for the target on the given GOOS
@@ -56,7 +71,7 @@ func toolsFor(t *diagnostic.Target, goos string) []Tool {
 		}
 	}
 	if t == nil {
-		return tools
+		return cacheAvailability(tools)
 	}
 	host := t.Host
 
@@ -106,7 +121,7 @@ func toolsFor(t *diagnostic.Target, goos string) []Tool {
 	// gated behind a shown-command confirmation (Confirm) rather than launching
 	// on the hotkey like everything else.
 	tools = append(tools, nmapTool(quote, host))
-	return tools
+	return cacheAvailability(tools)
 }
 
 // nmapTool builds the nmap adapter: an explicitly-confirmed port scan with
