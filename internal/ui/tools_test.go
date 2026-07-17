@@ -205,6 +205,18 @@ func TestToolsBracketIPv6(t *testing.T) {
 	}
 }
 
+func TestDigReversesLiteralTargets(t *testing.T) {
+	for _, raw := range []string{"1.1.1.1", "2001:db8::1"} {
+		target := mustTarget(t, raw)
+		tool := toolByKey(t, toolsFor(target, "linux"), "d")
+		args, _, display := tool.Build(target)
+		want := []string{"+time=2", "+tries=1", "-x", raw}
+		if tool.Purpose != "reverse DNS lookup" || !slices.Equal(args, want) || display != "dig "+shellArgs(want) {
+			t.Errorf("dig for %q = {Purpose:%q args:%q display:%q}, want reverse lookup %q", raw, tool.Purpose, args, display, want)
+		}
+	}
+}
+
 // TestNmapTool pins the advanced tool: it must be gated behind Confirm, scan
 // only the target's explicit port, and never carry an aggressive scan flag.
 func TestNmapTool(t *testing.T) {

@@ -82,6 +82,8 @@ func toolsFor(t *diagnostic.Target, goos string) []Tool {
 
 	if goos == "windows" {
 		tools = append(tools, staticTool(quote, "d", "DNS lookup", "nslookup", "nslookup", host))
+	} else if t.IsLiteral {
+		tools = append(tools, staticTool(quote, "d", "reverse DNS lookup", "dig", "dig", "+time=2", "+tries=1", "-x", host))
 	} else {
 		tools = append(tools, staticTool(quote, "d", "DNS lookup", "dig", "dig", "+time=2", "+tries=1", host))
 	}
