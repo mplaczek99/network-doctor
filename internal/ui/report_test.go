@@ -176,3 +176,14 @@ func TestReportVerdictPass(t *testing.T) {
 		t.Errorf("bad generic pass report:\n%s", rep)
 	}
 }
+
+func TestReportIncludesTimedOutToolOutput(t *testing.T) {
+	m := newModel(nil, false)
+	m.jobStatus = JobTimedOut
+	m.jobDisplay = "ping example.com"
+	m.jobLines = []string{"reply before timeout"}
+
+	if rep := m.report(); !strings.Contains(rep, "tool output ($ ping example.com):\n  reply before timeout") {
+		t.Errorf("timed-out tool output missing from report:\n%s", rep)
+	}
+}

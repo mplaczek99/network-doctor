@@ -119,7 +119,7 @@ func (m model) report() string {
 			fmt.Fprintf(&b, "        attempt: %s %dms %s\n", a.IP, a.Dur.Milliseconds(), st)
 		}
 	}
-	if len(m.jobLines) > 0 && (m.jobStatus == JobDone || m.jobStatus == JobFailed) {
+	if len(m.jobLines) > 0 {
 		const reportTailLines = 15
 		lines := m.jobLines
 		if len(lines) > reportTailLines {
