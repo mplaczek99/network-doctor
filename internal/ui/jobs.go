@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 	"os/exec"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -190,12 +189,7 @@ func classifyJob(ctx context.Context, werr error) JobStatus {
 	}
 }
 
-// winSafe makes invalid UTF-8 from Windows consoles (OEM code page) visible as
-// '?' instead of letting the sanitizer drop it silently. Windows subprocess
-// boundary only — Unix sanitization semantics are untouched.
+// winSafe makes invalid UTF-8 visible instead of letting the sanitizer drop it.
 func winSafe(s string) string {
-	if runtime.GOOS == "windows" {
-		return strings.ToValidUTF8(s, "?")
-	}
-	return s
+	return strings.ToValidUTF8(s, "?")
 }
