@@ -507,7 +507,7 @@ func (m *model) applyTarget(t *diagnostic.Target) {
 	m.selected = 0
 }
 
-func (m *model) runPending(p *pendingAction) (tea.Model, tea.Cmd) {
+func (m model) runPending(p *pendingAction) (tea.Model, tea.Cmd) {
 	switch p.kind {
 	case pendQuit:
 		m.clearCancel()

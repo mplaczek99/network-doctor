@@ -15,21 +15,6 @@ import (
 	"github.com/heymaikol/network-doctor/internal/diagnostic"
 )
 
-// asModelP tolerates either a value model or a *model — the deferred-action path
-// returns the latter (runPending has a pointer receiver).
-func asModelP(t *testing.T, m tea.Model) model {
-	t.Helper()
-	switch v := m.(type) {
-	case model:
-		return v
-	case *model:
-		return *v
-	default:
-		t.Fatalf("expected model/*model, got %T", m)
-		return model{}
-	}
-}
-
 func TestAppendJobLine(t *testing.T) {
 	var m model
 	for i := 0; i < maxJobLines+50; i++ {
@@ -248,7 +233,7 @@ func TestDeferredQuit(t *testing.T) {
 	}
 
 	u2, cmd2 := nm.Update(ToolDoneMsg{JobID: "j", Generation: 3, Status: JobCanceled})
-	nm2 := asModelP(t, u2)
+	nm2 := asModel(t, u2)
 	if nm2.activeJob != nil {
 		t.Error("active job must clear on the terminal event")
 	}
@@ -289,7 +274,7 @@ func TestDeferredRestart(t *testing.T) {
 	}
 
 	u2, cmd2 := nm.Update(ToolDoneMsg{JobID: "j", Generation: 3, Status: JobCanceled})
-	nm2 := asModelP(t, u2)
+	nm2 := asModel(t, u2)
 	if nm2.generation != 4 {
 		t.Errorf("generation = %d, want 4 after deferred restart", nm2.generation)
 	}
@@ -330,7 +315,7 @@ func TestDeferredRestartDefersTargetSwap(t *testing.T) {
 	}
 
 	u, cmd := nm.Update(ToolDoneMsg{JobID: "j", Generation: 3, Status: JobCanceled})
-	nm2 := asModelP(t, u)
+	nm2 := asModel(t, u)
 	if cmd == nil {
 		t.Fatal("deferred restart must issue a reschedule cmd")
 	}
