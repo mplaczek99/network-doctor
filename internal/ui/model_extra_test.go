@@ -100,8 +100,13 @@ func TestNetworkLine(t *testing.T) {
 
 func TestGlyph(t *testing.T) {
 	m := newModel(nil, false)
-	// No result yet → spinner view, must not panic and must be non-empty handling.
-	_ = m.glyph(diagnostic.ProbeIface)
+	if got := m.glyph(diagnostic.ProbeIface); !strings.ContainsRune(got, '·') {
+		t.Errorf("queued glyph = %q, want faint dot", got)
+	}
+	m.started[diagnostic.ProbeIface] = true
+	if got := m.glyph(diagnostic.ProbeIface); got != m.spinner.View() {
+		t.Errorf("running glyph = %q, want spinner %q", got, m.spinner.View())
+	}
 	cases := []struct {
 		status diagnostic.Status
 		want   rune

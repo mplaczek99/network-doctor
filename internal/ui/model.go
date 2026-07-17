@@ -765,6 +765,9 @@ func (m *model) clearCancel() {
 func (m model) glyph(id diagnostic.ProbeID) string {
 	r, ok := m.results[id]
 	if !ok {
+		if !m.started[id] {
+			return faintStyle.Render("·")
+		}
 		return m.spinner.View()
 	}
 	return statusStyles[r.Status].Render(probeGlyph(r.Status))
