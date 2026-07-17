@@ -230,7 +230,7 @@ func containsEnv(env []string, kv string) bool {
 // 'q' while a job runs cancels it and defers the quit; the terminal event then
 // performs it.
 func TestDeferredQuit(t *testing.T) {
-	m := newModel(mustTarget(t, "github.com"), false)
+	m := newModel(mustTarget(t, "github.com"), true)
 	m.generation = 3
 	canceled := false
 	m.activeJob = &job{id: "j", cancel: func() { canceled = true }}
@@ -257,6 +257,9 @@ func TestDeferredQuit(t *testing.T) {
 	}
 	if _, ok := cmd2().(tea.QuitMsg); !ok {
 		t.Errorf("deferred quit cmd = %T, want tea.QuitMsg", cmd2())
+	}
+	if ExitCode(u2) != 0 {
+		t.Error("deferred quit from toolbox mode must exit 0")
 	}
 }
 

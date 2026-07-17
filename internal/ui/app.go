@@ -11,8 +11,13 @@ import (
 // failed or the chain did not finish; otherwise 0. Warn (degraded but
 // functional) and Skip/N/A are not failures.
 func ExitCode(final tea.Model) int {
-	m, ok := final.(model)
-	if !ok {
+	var m model
+	switch final := final.(type) {
+	case model:
+		m = final
+	case *model:
+		m = *final
+	default:
 		return 1
 	}
 	if m.toolbox && !m.chainRan() {
