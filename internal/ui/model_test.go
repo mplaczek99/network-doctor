@@ -427,6 +427,24 @@ func TestViewFitsTerminal(t *testing.T) {
 	}
 }
 
+func TestViewClampsLongDetailsToTerminal(t *testing.T) {
+	m := newModel(mustTarget(t, "example.com:443"), false)
+	m.results[m.probes[0].ID] = diagnostic.ProbeResult{
+		Status:   diagnostic.StatusWarn,
+		Detail:   "some addresses failed",
+		Attempts: make([]diagnostic.Attempt, 16),
+	}
+	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 20})
+	nm := asModel(t, u)
+	view := nm.View()
+	if rows := strings.Count(view, "\n") + 1; rows > nm.height {
+		t.Errorf("view is %d rows, terminal is %d", rows, nm.height)
+	}
+	if !strings.Contains(view, "Network Doctor") {
+		t.Error("height clamp must preserve the masthead")
+	}
+}
+
 // On a short terminal the forms cheatsheet is dropped but the input survives.
 func TestPromptFormsDroppedWhenShort(t *testing.T) {
 	m := newModel(mustTarget(t, "example.com:443"), false)

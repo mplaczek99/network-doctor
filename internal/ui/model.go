@@ -843,6 +843,11 @@ func (m model) View() string {
 			avail = m.height - strings.Count(fixed, "\n") - strings.Count(tail, "\n") - 1
 		}
 	}
+	if m.height > 0 && avail < 0 {
+		body = lipgloss.NewStyle().MaxHeight(max(lipgloss.Height(body)+avail, 1)).Render(body)
+		fixed = top + body + "\n" + toolbox + "\n"
+		avail = m.height - strings.Count(fixed, "\n") - strings.Count(tail, "\n") - 1
+	}
 	return fixed + m.jobView(avail) + tail
 }
 
