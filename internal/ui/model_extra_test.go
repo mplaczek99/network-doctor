@@ -33,7 +33,7 @@ func asModelP(t *testing.T, m tea.Model) model {
 func TestAppendJobLine(t *testing.T) {
 	var m model
 	for i := 0; i < maxJobLines+50; i++ {
-		m.appendJobLine(false, "x")
+		m.appendJobLine("x")
 	}
 	if len(m.jobLines) != maxJobLines {
 		t.Errorf("len = %d, want cap %d", len(m.jobLines), maxJobLines)
@@ -45,9 +45,9 @@ func TestAppendJobLine(t *testing.T) {
 	if m.jobDropped != 0 {
 		t.Errorf("jobDropped = %d, want 0 — evictions must not touch it", m.jobDropped)
 	}
-	m.appendJobLine(true, "newest")
-	if last := m.jobLines[len(m.jobLines)-1]; last.text != "newest" || !last.stderr {
-		t.Errorf("last = %+v, want newest stderr line kept", last)
+	m.appendJobLine("newest")
+	if last := m.jobLines[len(m.jobLines)-1]; last != "newest" {
+		t.Errorf("last = %q, want newest line kept", last)
 	}
 	if len(m.jobLines) != maxJobLines || m.jobEvicted != 51 {
 		t.Errorf("len=%d evicted=%d, want %d and 51", len(m.jobLines), m.jobEvicted, maxJobLines)
@@ -359,8 +359,7 @@ func TestDeferredTool(t *testing.T) {
 	}
 }
 
-// Output lines interleave in arrival order with their stream tag; stale
-// messages are dropped.
+// Output lines interleave in arrival order; stale messages are dropped.
 func TestToolOutputRouting(t *testing.T) {
 	m := newModel(nil, false)
 	m.generation = 1
@@ -368,17 +367,17 @@ func TestToolOutputRouting(t *testing.T) {
 
 	u, cmd := m.Update(ToolOutputMsg{JobID: "j", Generation: 1, Line: "hello"})
 	nm := asModel(t, u)
-	if len(nm.jobLines) != 1 || nm.jobLines[0] != (outLine{false, "hello"}) {
+	if len(nm.jobLines) != 1 || nm.jobLines[0] != "hello" {
 		t.Errorf("jobLines = %v, want [hello]", nm.jobLines)
 	}
 	if cmd == nil {
 		t.Error("an accepted output line must reissue waitForMsg")
 	}
 
-	u, _ = nm.Update(ToolOutputMsg{JobID: "j", Generation: 1, Stderr: true, Line: "oops"})
+	u, _ = nm.Update(ToolOutputMsg{JobID: "j", Generation: 1, Line: "oops"})
 	u, _ = asModel(t, u).Update(ToolOutputMsg{JobID: "j", Generation: 1, Line: "world"})
 	nm = asModel(t, u)
-	want := []outLine{{false, "hello"}, {true, "oops"}, {false, "world"}}
+	want := []string{"hello", "oops", "world"}
 	if len(nm.jobLines) != 3 || nm.jobLines[1] != want[1] || nm.jobLines[2] != want[2] {
 		t.Errorf("jobLines = %v, want interleaved %v", nm.jobLines, want)
 	}
@@ -462,8 +461,8 @@ func TestLaunchToolUnavailable(t *testing.T) {
 	if m.jobStatus != JobFailed {
 		t.Errorf("status = %v, want JobFailed", m.jobStatus)
 	}
-	if len(m.jobLines) == 0 || !m.jobLines[0].stderr || !strings.Contains(m.jobLines[0].text, "not found") {
-		t.Errorf("jobLines = %v, want a stderr 'not found' hint", m.jobLines)
+	if len(m.jobLines) == 0 || !strings.Contains(m.jobLines[0], "not found") {
+		t.Errorf("jobLines = %v, want a 'not found' hint", m.jobLines)
 	}
 	if m.jobDropped != 0 || m.jobEvicted != 0 {
 		t.Errorf("jobDropped/jobEvicted = %d/%d, want 0/0", m.jobDropped, m.jobEvicted)
@@ -496,8 +495,8 @@ func TestLaunchToolStartErrorClearsPreviousJobState(t *testing.T) {
 	if m.jobDisplay != "bad-tool --display" {
 		t.Errorf("jobDisplay = %q, want built display string", m.jobDisplay)
 	}
-	if len(m.jobLines) == 0 || !m.jobLines[0].stderr {
-		t.Errorf("jobLines = %v, want a stderr error line", m.jobLines)
+	if len(m.jobLines) == 0 {
+		t.Errorf("jobLines = %v, want an error line", m.jobLines)
 	}
 	if m.jobDropped != 0 || m.jobEvicted != 0 {
 		t.Errorf("jobDropped/jobEvicted = %d/%d, want 0/0", m.jobDropped, m.jobEvicted)
@@ -522,7 +521,7 @@ func TestViewRenders(t *testing.T) {
 
 	job := newModel(mustTarget(t, "github.com"), false)
 	job.jobStatus, job.jobName, job.jobDisplay = JobDone, "ping", "ping github.com"
-	job.jobLines = []outLine{{false, "64 bytes from ..."}}
+	job.jobLines = []string{"64 bytes from ..."}
 	if !strings.Contains(job.View(), "$ ping github.com") {
 		t.Error("job view must show the command line")
 	}
@@ -577,7 +576,7 @@ func TestViewportFollow(t *testing.T) {
 		t.Error("wheel up must pause follow mode")
 	}
 
-	u, _ = nm.Update(ToolOutputMsg{JobID: "j", Generation: 1, Stderr: true, Line: "boom"})
+	u, _ = nm.Update(ToolOutputMsg{JobID: "j", Generation: 1, Line: "boom"})
 	nm = asModel(t, u)
 	if nm.vp.AtBottom() {
 		t.Error("paused viewport must hold its position on new output")
@@ -594,10 +593,10 @@ func TestViewportEvictionKeepsPausedReader(t *testing.T) {
 	m.width, m.height = 20, 10
 	m.generation = 1
 	m.activeJob = &job{id: "j", ch: make(chan tea.Msg, 1)}
-	m.jobLines = make([]outLine, maxJobLines)
-	m.jobLines[0].text = strings.Repeat("x", m.width+1) // two display rows
+	m.jobLines = make([]string, maxJobLines)
+	m.jobLines[0] = strings.Repeat("x", m.width+1) // two display rows
 	for i := 1; i < maxJobLines; i++ {
-		m.jobLines[i].text = fmt.Sprintf("line %d", i)
+		m.jobLines[i] = fmt.Sprintf("line %d", i)
 	}
 	m.viewing, m.follow = true, false
 	m.refreshViewport()

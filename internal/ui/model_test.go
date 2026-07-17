@@ -234,7 +234,7 @@ func TestViewerCopiesFullOutput(t *testing.T) {
 
 	m := newModel(nil, false)
 	m.jobStatus = JobDone
-	m.jobLines = []outLine{{text: "first"}, {stderr: true, text: "second"}}
+	m.jobLines = []string{"first", "second"}
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	nm := asModel(t, u)
 	if !strings.Contains(nm.View(), keyStyle.Render("y")) {
@@ -399,7 +399,7 @@ func TestViewFitsTerminal(t *testing.T) {
 	m.jobStatus = JobRunning
 	m.jobDisplay = "ping example.com"
 	for range 200 {
-		m.jobLines = append(m.jobLines, outLine{text: "reply from 1.2.3.4"})
+		m.jobLines = append(m.jobLines, "reply from 1.2.3.4")
 	}
 	for _, size := range []tea.WindowSizeMsg{
 		{Width: 120, Height: 40},
@@ -468,7 +468,7 @@ func TestPromptFormsYieldToJobPane(t *testing.T) {
 	m.jobStatus = JobRunning
 	m.jobDisplay = "ping example.com"
 	for range 200 {
-		m.jobLines = append(m.jobLines, outLine{text: "reply from 1.2.3.4"})
+		m.jobLines = append(m.jobLines, "reply from 1.2.3.4")
 	}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	nm := asModel(t, u)

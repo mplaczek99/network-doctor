@@ -116,11 +116,11 @@ func TestReportSanitized(t *testing.T) {
 		},
 	}
 	for i := 0; i < 16; i++ {
-		m.jobLines = append(m.jobLines, outLine{false, fmt.Sprintf("line %02d", i)})
+		m.jobLines = append(m.jobLines, fmt.Sprintf("line %02d", i))
 	}
 	m.jobLines = append(m.jobLines,
-		outLine{true, "ssh banner on stderr"},
-		outLine{false, "result 200\x1b[31m"},
+		"ssh banner on stderr",
+		"result 200\x1b[31m",
 	)
 	m.jobStatus = JobDone
 	m.jobDisplay = "curl https://example.com"
@@ -149,12 +149,6 @@ func TestReportSanitized(t *testing.T) {
 	}
 	if strings.ContainsRune(rep, 0x1b) {
 		t.Errorf("escape byte leaked into report:\n%q", rep)
-	}
-}
-
-func TestRenderJobLineTreatsStderrAsOutput(t *testing.T) {
-	if got := renderJobLine(outLine{stderr: true, text: "SSH banner"}); got != "SSH banner" {
-		t.Errorf("renderJobLine() = %q, want unmarked stderr payload", got)
 	}
 }
 

@@ -59,14 +59,6 @@ const (
 	ctrlCNotice  = "Press Ctrl+C again (or q) to quit"
 )
 
-// outLine is one captured output line tagged with its source stream. Lines are
-// kept in arrival order — best-effort interleaving, since the kernel buffers
-// stdout and stderr pipes independently.
-type outLine struct {
-	stderr bool
-	text   string
-}
-
 type model struct {
 	target *diagnostic.Target
 	probes []diagnostic.Probe
@@ -92,7 +84,7 @@ type model struct {
 	jobStatus  JobStatus
 	jobName    string
 	jobDisplay string
-	jobLines   []outLine
+	jobLines   []string
 	jobDropped int64 // channel-overflow drops, reported by ToolDoneMsg
 	jobEvicted int   // oldest lines evicted from the jobLines ring buffer
 	jobStart   time.Time
@@ -308,7 +300,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.activeJob == nil || msg.Generation != m.generation || msg.JobID != m.activeJob.id {
 			return m, nil // stale job message
 		}
-		m.appendJobLine(msg.Stderr, msg.Line)
+		m.appendJobLine(msg.Line)
 		if m.viewing {
 			m.refreshViewport()
 		}
@@ -598,7 +590,7 @@ func (m *model) doRestart() tea.Cmd {
 func (m *model) launchTool(tool Tool) tea.Cmd {
 	if !tool.Available() {
 		m.jobName, m.jobStatus = tool.Name, JobFailed
-		m.jobLines, m.jobDropped, m.jobEvicted = []outLine{{true, tool.Bin + " not found — install it"}}, 0, 0
+		m.jobLines, m.jobDropped, m.jobEvicted = []string{tool.Bin + " not found — install it"}, 0, 0
 		m.jobDur = 0
 		m.jobDisplay = tool.Name
 		return nil
@@ -614,7 +606,7 @@ func (m *model) launchTool(tool Tool) tea.Cmd {
 	j, cmd, err := startTool(m.ctx, m.generation, id, tool.Bin, args, env, tool.Timeout)
 	if err != nil {
 		m.jobName, m.jobStatus = tool.Name, JobFailed
-		m.jobLines, m.jobDropped, m.jobEvicted = []outLine{{true, textsafe.Clean(err.Error())}}, 0, 0
+		m.jobLines, m.jobDropped, m.jobEvicted = []string{textsafe.Clean(err.Error())}, 0, 0
 		m.jobDisplay, m.jobDur = display, 0
 		return nil
 	}
@@ -700,12 +692,12 @@ func snapshot(res map[diagnostic.ProbeID]diagnostic.ProbeResult, deps []diagnost
 // appendJobLine appends one output line to the ring buffer, counting evictions
 // separately from channel-overflow drops (jobDropped) so the viewport context
 // line stays accurate.
-func (m *model) appendJobLine(stderr bool, text string) {
-	m.jobLines = append(m.jobLines, outLine{stderr, text})
+func (m *model) appendJobLine(text string) {
+	m.jobLines = append(m.jobLines, text)
 	if n := len(m.jobLines) - maxJobLines; n > 0 {
 		if m.viewing && !m.follow {
 			for _, ln := range m.jobLines[:n] {
-				h := lipgloss.Height(lipgloss.NewStyle().Width(m.vpWidth()).Render(renderJobLine(ln)))
+				h := lipgloss.Height(lipgloss.NewStyle().Width(m.vpWidth()).Render(ln))
 				m.vp.SetYOffset(m.vp.YOffset - h)
 			}
 		}
@@ -729,13 +721,9 @@ func (m model) jobOutput() string {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(renderJobLine(ln))
+		b.WriteString(ln)
 	}
 	return b.String()
-}
-
-func renderJobLine(ln outLine) string {
-	return ln.text
 }
 
 // refreshViewport resizes and re-renders the open viewport, sticking to the
@@ -1254,7 +1242,7 @@ func (m model) jobView(avail int) string {
 		shown = shown[len(shown)-tailN:]
 	}
 	for _, ln := range shown {
-		b.WriteString(renderJobLine(ln) + "\n")
+		b.WriteString(ln + "\n")
 	}
 	older := len(m.jobLines) - len(shown) + m.jobEvicted
 	if older > 0 || m.jobDropped > 0 {

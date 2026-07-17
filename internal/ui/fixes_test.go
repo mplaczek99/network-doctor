@@ -82,7 +82,7 @@ func TestFixVerifyRestart(t *testing.T) {
 	m.fixing = true
 	m.activeJob = &job{id: "fx", cancel: func() {}}
 	m.jobName, m.jobDisplay = "fix", "resolvectl flush-caches"
-	m.jobLines = []outLine{{text: "cache flushed"}}
+	m.jobLines = []string{"cache flushed"}
 
 	u, cmd := m.Update(ToolDoneMsg{JobID: "fx", Generation: 2, Status: JobDone})
 	nm := asModelP(t, u)

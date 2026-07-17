@@ -127,7 +127,7 @@ func (m model) report() string {
 		}
 		fmt.Fprintf(&b, "\ntool output ($ %s):\n", textsafe.Clean(m.jobDisplay))
 		for _, line := range lines {
-			b.WriteString("  " + textsafe.Clean(line.text) + "\n")
+			b.WriteString("  " + textsafe.Clean(line) + "\n")
 		}
 	}
 	return b.String()
