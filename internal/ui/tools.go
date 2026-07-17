@@ -203,7 +203,7 @@ func sshTool(quote func([]string) string, host string, port int, goos string) To
 	if goos == "windows" {
 		knownHosts = "NUL"
 	}
-	return staticTool(quote, "c", "web check", "ssh", "ssh",
+	return staticTool(quote, "c", "SSH check", "ssh", "ssh",
 		"-v",
 		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=3",
@@ -218,7 +218,7 @@ func sshTool(quote func([]string) string, host string, port int, goos string) To
 // gets an empty stdin, so s_client exits right after the handshake instead of
 // waiting for commands; the job timeout bounds the rest.
 func smtpTool(quote func([]string) string, host string, port int) Tool {
-	return staticTool(quote, "c", "web check", "openssl s_client", "openssl",
+	return staticTool(quote, "c", "SMTP check", "openssl s_client", "openssl",
 		"s_client", "-starttls", "smtp", "-connect", host+":"+strconv.Itoa(port))
 }
 

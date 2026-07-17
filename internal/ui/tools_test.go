@@ -141,8 +141,8 @@ func TestToolsForProtocol(t *testing.T) {
 
 	ssh := mustTarget(t, "example.com:22")
 	c := findC(toolsFor(ssh, "linux"))
-	if c.Name != "ssh" || c.Bin != "ssh" {
-		t.Fatalf("ssh target c-slot = {Name:%q Bin:%q}, want ssh", c.Name, c.Bin)
+	if c.Name != "ssh" || c.Purpose != "SSH check" || c.Bin != "ssh" {
+		t.Fatalf("ssh target c-slot = {Name:%q Purpose:%q Bin:%q}, want ssh/SSH check/ssh", c.Name, c.Purpose, c.Bin)
 	}
 	args, env, display := c.Build(ssh)
 	wantSSH := []string{
@@ -169,8 +169,8 @@ func TestToolsForProtocol(t *testing.T) {
 
 	smtp := mustTarget(t, "mail.example.com:587")
 	c = findC(toolsFor(smtp, "linux"))
-	if c.Name != "openssl s_client" || c.Bin != "openssl" {
-		t.Fatalf("smtp target c-slot = {Name:%q Bin:%q}, want openssl s_client", c.Name, c.Bin)
+	if c.Name != "openssl s_client" || c.Purpose != "SMTP check" || c.Bin != "openssl" {
+		t.Fatalf("smtp target c-slot = {Name:%q Purpose:%q Bin:%q}, want openssl s_client/SMTP check/openssl", c.Name, c.Purpose, c.Bin)
 	}
 	args, _, _ = c.Build(smtp)
 	wantSMTP := []string{"s_client", "-starttls", "smtp", "-connect", "mail.example.com:587"}
