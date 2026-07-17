@@ -674,14 +674,7 @@ func (m model) jobContent(w int) string {
 }
 
 func (m model) jobOutput() string {
-	var b strings.Builder
-	for i, ln := range m.jobLines {
-		if i > 0 {
-			b.WriteByte('\n')
-		}
-		b.WriteString(ln)
-	}
-	return b.String()
+	return strings.Join(m.jobLines, "\n")
 }
 
 // refreshViewport resizes and re-renders the open viewport, sticking to the
