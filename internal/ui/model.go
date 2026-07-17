@@ -683,6 +683,12 @@ func snapshot(res map[diagnostic.ProbeID]diagnostic.ProbeResult, deps []diagnost
 func (m *model) appendJobLine(stderr bool, text string) {
 	m.jobLines = append(m.jobLines, outLine{stderr, text})
 	if n := len(m.jobLines) - maxJobLines; n > 0 {
+		if m.viewing && !m.follow {
+			for _, ln := range m.jobLines[:n] {
+				h := lipgloss.Height(lipgloss.NewStyle().Width(m.vpWidth()).Render(renderJobLine(ln)))
+				m.vp.SetYOffset(m.vp.YOffset - h)
+			}
+		}
 		m.jobEvicted += n
 		m.jobLines = m.jobLines[n:]
 	}

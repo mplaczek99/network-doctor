@@ -575,3 +575,28 @@ func TestViewportFollow(t *testing.T) {
 		t.Error("esc must close the viewport")
 	}
 }
+
+func TestViewportEvictionKeepsPausedReader(t *testing.T) {
+	m := newModel(nil, false)
+	m.width, m.height = 20, 10
+	m.generation = 1
+	m.activeJob = &job{id: "j", ch: make(chan tea.Msg, 1)}
+	m.jobLines = make([]outLine, maxJobLines)
+	m.jobLines[0].text = strings.Repeat("x", m.width+1) // two display rows
+	for i := 1; i < maxJobLines; i++ {
+		m.jobLines[i].text = fmt.Sprintf("line %d", i)
+	}
+	m.viewing, m.follow = true, false
+	m.refreshViewport()
+	m.vp.SetYOffset(10)
+	want := m.vp.View()
+
+	u, _ := m.Update(ToolOutputMsg{JobID: "j", Generation: 1, Line: "newest"})
+	nm := asModel(t, u)
+	if nm.vp.YOffset != 8 {
+		t.Fatalf("offset = %d, want 8 after evicting two wrapped rows", nm.vp.YOffset)
+	}
+	if got := nm.vp.View(); got != want {
+		t.Errorf("paused viewport moved after eviction\nbefore:\n%s\nafter:\n%s", want, got)
+	}
+}
