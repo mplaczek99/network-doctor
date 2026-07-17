@@ -39,6 +39,12 @@ func TestSanitize(t *testing.T) {
 	if got := Clean("\x1b[31mhello\x1b[0m"); got != "hello" {
 		t.Errorf("escape strip = %q, want %q", got, "hello")
 	}
+	if got := Clean("\x1b[38:5:196mred\x1b[0m"); got != "red" {
+		t.Errorf("colon CSI strip = %q, want %q", got, "red")
+	}
+	if got := Clean("\x1b[<65;4;12M after mouse"); got != " after mouse" {
+		t.Errorf("private CSI strip = %q, want %q", got, " after mouse")
+	}
 	if got := Clean("line1\nline2"); got != "line1line2" {
 		t.Errorf("newline strip = %q, want %q", got, "line1line2")
 	}

@@ -11,7 +11,7 @@ import (
 // CSI (ESC [ ... final), OSC (ESC ] ... BEL|ST), and any other two-byte
 // ESC sequence. Ordered CSI/OSC first so the generic 2-byte form can't swallow
 // a CSI/OSC introducer.
-var escapeRe = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-_]`)
+var escapeRe = regexp.MustCompile(`\x1b\[[0-9:;<=>?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-_]`)
 
 // sanitize strips ANSI/OSC/CSI escape sequences and control runes from text that
 // originates from external tools or remote servers (banners, error strings), so
