@@ -295,6 +295,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds := m.scheduleStep()
 		if m.allDone() {
 			diagnostic.DowngradeEgress(m.results)
+			for i, p := range m.probes {
+				if m.results[p.ID].Status == diagnostic.StatusFail {
+					m.selected = i
+					break
+				}
+			}
 		}
 		return m, tea.Batch(cmds...)
 

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"net"
+	"strings"
 	"testing"
 
 	"github.com/heymaikol/network-doctor/internal/diagnostic"
@@ -76,6 +77,30 @@ func TestDowngradeRunsWhenSkipsFinishRun(t *testing.T) {
 	}
 	if got := nm.results[diagnostic.ProbeInternet].Status; got != diagnostic.StatusWarn {
 		t.Fatalf("internet = %v, want Warn (proxy works, egress downgraded)", got)
+	}
+}
+
+func TestCompletedRunSelectsFirstFailure(t *testing.T) {
+	m := newModel(mustTarget(t, "github.com:443"), false)
+	for _, id := range []diagnostic.ProbeID{
+		diagnostic.ProbeIface,
+		diagnostic.ProbeInternet,
+		diagnostic.ProbeProxy,
+		diagnostic.ProbeDNS,
+		diagnostic.ProbeHTTP,
+	} {
+		m.results[id] = diagnostic.ProbeResult{ID: id, Status: diagnostic.StatusPass}
+		m.started[id] = true
+	}
+	m.started[diagnostic.ProbeTargetTCP] = true
+
+	u, _ := m.Update(probeDoneMsg{id: diagnostic.ProbeTargetTCP, res: diagnostic.ProbeResult{Status: diagnostic.StatusFail, Detail: "connection refused"}})
+	nm := asModel(t, u)
+	if nm.selected != 4 {
+		t.Fatalf("selected = %d, want first failed probe 4", nm.selected)
+	}
+	if !strings.Contains(nm.bodyView(false), "connection refused") {
+		t.Error("details panel must show the selected failure")
 	}
 }
 
