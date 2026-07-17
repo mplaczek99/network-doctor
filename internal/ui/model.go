@@ -550,7 +550,8 @@ func (m model) fixTool() *Tool {
 }
 
 // doRestart bumps the generation (invalidating outstanding probe/job messages),
-// clears run + job state, resets the context, and reschedules from the root.
+// clears run state, resets the context, and reschedules from the root. The last
+// job remains viewable until launchTool replaces it.
 func (m *model) doRestart() tea.Cmd {
 	wasTicking := m.spinnerActive()
 	m.clearCancel()
@@ -562,8 +563,6 @@ func (m *model) doRestart() tea.Cmd {
 	m.activeJob, m.pending = nil, nil
 	m.fixing, m.verifying = false, false
 	m.notice = ""
-	m.jobStatus, m.jobLines, m.jobDropped, m.jobEvicted = JobQueued, nil, 0, 0
-	m.jobDur = 0
 	if m.viewing {
 		m.refreshViewport()
 	}

@@ -81,6 +81,8 @@ func TestFixVerifyRestart(t *testing.T) {
 	doneResults(&m, diagnostic.ProbeDNS)
 	m.fixing = true
 	m.activeJob = &job{id: "fx", cancel: func() {}}
+	m.jobName, m.jobDisplay = "fix", "resolvectl flush-caches"
+	m.jobLines = []outLine{{text: "cache flushed"}}
 
 	u, cmd := m.Update(ToolDoneMsg{JobID: "fx", Generation: 2, Status: JobDone})
 	nm := asModelP(t, u)
@@ -95,6 +97,11 @@ func TestFixVerifyRestart(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("fix completion must issue the reschedule cmd")
+	}
+	doneResults(&nm, diagnostic.ProbeDNS)
+	view := nm.View()
+	if !strings.Contains(view, "Fix didn't help") || !strings.Contains(view, "cache flushed") {
+		t.Error("failed verification must show its verdict with the fix output")
 	}
 }
 
