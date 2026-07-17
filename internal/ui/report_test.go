@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +43,34 @@ func TestCopyReportPrefersNativeClipboard(t *testing.T) {
 	}
 	if got := strings.Join(run, ","); got != "wl-copy:hello,xclip -selection clipboard:hello" {
 		t.Errorf("commands = %q", got)
+	}
+}
+
+func TestExportReportSavePath(t *testing.T) {
+	oldWriteFile, oldUserHomeDir := reportWriteFile, reportUserHomeDir
+	t.Cleanup(func() { reportWriteFile, reportUserHomeDir = oldWriteFile, oldUserHomeDir })
+
+	home := t.TempDir()
+	var paths []string
+	reportWriteFile = func(path string, data []byte, perm os.FileMode) error {
+		paths = append(paths, path)
+		if len(paths) == 1 {
+			return os.ErrPermission
+		}
+		if string(data) != "hello" || perm != 0o600 {
+			t.Errorf("write data = %q, mode = %o", data, perm)
+		}
+		return nil
+	}
+	reportUserHomeDir = func() (string, error) { return home, nil }
+
+	notice, ok := exportReport("hello", true)
+	if !ok || len(paths) != 2 {
+		t.Fatalf("exportReport() = %q, %v; writes = %v", notice, ok, paths)
+	}
+	saved := strings.TrimPrefix(notice, "report saved to ")
+	if !filepath.IsAbs(paths[0]) || !filepath.IsAbs(saved) || filepath.Dir(saved) != home || saved != paths[1] {
+		t.Errorf("saved path = %q, writes = %v, want absolute home path", saved, paths)
 	}
 }
 

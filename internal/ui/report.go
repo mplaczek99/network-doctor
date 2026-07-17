@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,10 +19,24 @@ import (
 func exportReport(rep string, save bool) (notice string, ok bool) {
 	if save {
 		name := fmt.Sprintf("network-doctor-%s.txt", time.Now().Format("20060102-150405"))
-		if err := os.WriteFile(name, []byte(rep), 0o600); err != nil {
+		path, err := filepath.Abs(name)
+		if err == nil {
+			err = reportWriteFile(path, []byte(rep), 0o600)
+		}
+		if err != nil {
+			home, homeErr := reportUserHomeDir()
+			if homeErr != nil {
+				return "save failed: " + homeErr.Error(), false
+			}
+			path, err = filepath.Abs(filepath.Join(home, name))
+			if err == nil {
+				err = reportWriteFile(path, []byte(rep), 0o600)
+			}
+		}
+		if err != nil {
 			return "save failed: " + err.Error(), false
 		}
-		return "report saved to " + name, true
+		return "report saved to " + path, true
 	}
 	if err := copyReport(rep); err != nil {
 		return "copy failed: " + err.Error(), false
@@ -30,6 +45,8 @@ func exportReport(rep string, save bool) (notice string, ok bool) {
 }
 
 var (
+	reportWriteFile   = os.WriteFile
+	reportUserHomeDir = os.UserHomeDir
 	clipboardLookPath = exec.LookPath
 	clipboardRun      = func(path string, args []string, rep string) error {
 		cmd := exec.Command(path, args...)
