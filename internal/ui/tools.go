@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"net"
 	"os"
 	"os/exec"
 	"slices"
@@ -149,6 +150,9 @@ func nmapTool(quote func([]string) string, host string) Tool {
 // curl→Invoke-WebRequest alias; the display targets PowerShell quoting (cmd.exe
 // paste is not supported). Elsewhere the display keeps the POSIX LC_ALL=C form.
 func curlTool(host, goos string) Tool {
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
 	bin, devNull := "curl", "/dev/null"
 	if goos == "windows" {
 		bin, devNull = "curl.exe", "NUL"
@@ -213,7 +217,7 @@ func sshTool(quote func([]string) string, host string, port int, goos string) To
 // waiting for commands; the job timeout bounds the rest.
 func smtpTool(quote func([]string) string, host string, port int) Tool {
 	return staticTool(quote, "c", "SMTP check", "openssl s_client", "openssl",
-		"s_client", "-starttls", "smtp", "-connect", host+":"+strconv.Itoa(port))
+		"s_client", "-starttls", "smtp", "-connect", net.JoinHostPort(host, strconv.Itoa(port)))
 }
 
 // staticTool builds a target-independent Tool whose argv is fixed at construction

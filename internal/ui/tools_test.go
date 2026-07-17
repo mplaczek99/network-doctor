@@ -187,6 +187,24 @@ func TestToolsForProtocol(t *testing.T) {
 	}
 }
 
+func TestToolsBracketIPv6(t *testing.T) {
+	tests := []struct {
+		target string
+		want   string
+	}{
+		{"2001:db8::1", "https://[2001:db8::1]"},
+		{"[2001:db8::1]:443", "https://[2001:db8::1]:443"},
+		{"[2001:db8::1]:587", "[2001:db8::1]:587"},
+	}
+	for _, tt := range tests {
+		target := mustTarget(t, tt.target)
+		args, _, _ := toolByKey(t, toolsFor(target, "linux"), "c").Build(target)
+		if got := args[len(args)-1]; got != tt.want {
+			t.Errorf("tool target for %q = %q, want %q", tt.target, got, tt.want)
+		}
+	}
+}
+
 // TestNmapTool pins the advanced tool: it must be gated behind Confirm, scan
 // only the target's explicit port, and never carry an aggressive scan flag.
 func TestNmapTool(t *testing.T) {
