@@ -1,7 +1,8 @@
 version: 2
 
 builds:
-  - env:
+  - binary: netdoc
+    env:
       - CGO_ENABLED=0
     goos:
       - linux
@@ -33,10 +34,10 @@ aur_sources:
       cd "${pkgname}-${pkgver}"
       export CGO_ENABLED=0
       export GOFLAGS="-trimpath -mod=readonly -modcacherw"
-      go build -ldflags "-s -w -X main.version=${pkgver}" -o "${pkgname}" .
+      go build -ldflags "-s -w -X main.version=${pkgver}" -o netdoc .
     package: |-
       cd "${pkgname}-${pkgver}"
-      install -Dm755 "${pkgname}" "${pkgdir}/usr/bin/${pkgname}"
+      install -Dm755 netdoc "${pkgdir}/usr/bin/netdoc"
       install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 
 homebrew_casks:

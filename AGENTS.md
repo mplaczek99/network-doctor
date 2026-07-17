@@ -6,7 +6,7 @@
 
 ## Build, Test, and Development Commands
 
-- `go build -o network-doctor .` builds the local executable.
+- `go build -o netdoc .` builds the local executable.
 - `go run . github.com:443` runs the TUI against a target without installing it.
 - `go run . --json github.com` exercises the headless reporting path.
 - `go test ./...` runs the standard unit and subprocess tests.

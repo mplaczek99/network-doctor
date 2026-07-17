@@ -70,7 +70,8 @@ is bounded by a 4-second timeout.
 
 ## Install
 
-Runs on **Linux, macOS, and Windows**.
+Runs on **Linux, macOS, and Windows**. The project is `network-doctor`; the
+installed binary is `netdoc`.
 
 ### Arch Linux (AUR)
 
@@ -106,27 +107,28 @@ Download a prebuilt binary from the [latest release](https://github.com/heymaiko
 go install github.com/heymaikol/network-doctor@latest
 ```
 
-Check what you're running with `network-doctor --version`.
+(`go install` names the binary `network-doctor` after the module; rename it to
+`netdoc` if you like.) Check what you're running with `netdoc --version`.
 
 Or build from a clone:
 
 ```sh
 git clone https://github.com/heymaikol/network-doctor
 cd network-doctor
-go build -o network-doctor .
+go build -o netdoc .
 ```
 
 ## Usage
 
 ```sh
-network-doctor                  # generic local + internet diagnosis
-network-doctor github.com       # diagnose the path to a host (→ HTTP + TLS + HTTPS)
-network-doctor github.com:22    # port selects the protocol rows (→ SSH banner)
-network-doctor https://host:80  # explicit scheme selects the protocol (→ TLS + HTTPS on :80)
-network-doctor --json host      # headless: one JSON report on stdout (scripts, CI, bug reports)
+netdoc                  # generic local + internet diagnosis
+netdoc github.com       # diagnose the path to a host (→ HTTP + TLS + HTTPS)
+netdoc github.com:22    # port selects the protocol rows (→ SSH banner)
+netdoc https://host:80  # explicit scheme selects the protocol (→ TLS + HTTPS on :80)
+netdoc --json host      # headless: one JSON report on stdout (scripts, CI, bug reports)
 ```
 
-`--timeout` overrides the per-check probe timeout; see `network-doctor --help`
+`--timeout` overrides the per-check probe timeout; see `netdoc --help`
 for the default.
 
 The target parser has two independent axes: the **port** (explicit `:port` >
@@ -140,7 +142,7 @@ literals are accepted bare (`::1`) or bracketed with a port (`[::1]:443`).
 | `↑`/`↓` (`k`/`j`) | select a probe row |
 | `enter` | open the current tool job's output in a scrollable full-screen viewer |
 | `y` (viewer) | copy the viewer's retained full output (up to 5,000 lines) |
-| `r` | restart — opens a prompt to edit the `network-doctor` arguments (`enter` runs, `esc` backs out) |
+| `r` | restart — opens a prompt to edit the `netdoc` arguments (`enter` runs, `esc` backs out) |
 | `y` / `w` | yank / write (copy / save) a report of the chain plus the completed tool output |
 | `q` | quit |
 
@@ -223,7 +225,7 @@ against. Exit codes follow the table below (`ok: false` ⇒ exit `1`).
 | Bad arguments / validation reject | `2` |
 
 ```sh
-network-doctor github.com || echo "path to github is broken"
+netdoc github.com || echo "path to github is broken"
 ```
 
 ## Platform support

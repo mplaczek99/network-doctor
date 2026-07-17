@@ -22,7 +22,7 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("network-doctor", flag.ContinueOnError)
+	fs := flag.NewFlagSet("netdoc", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	// Suppress the automatic usage dump: an explicit -help prints the full
 	// usage on stdout and exits 0, a parse error gets only a one-line hint.
@@ -42,7 +42,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 				printUsage(stdout, fs)
 				return 0
 			}
-			fmt.Fprintln(stderr, "run 'network-doctor --help' for usage")
+			fmt.Fprintln(stderr, "run 'netdoc --help' for usage")
 			return 2
 		}
 		if fs.NArg() == 0 {
@@ -52,20 +52,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 		args = fs.Args()[1:]
 	}
 	if len(positional) > 1 {
-		fmt.Fprintf(stderr, "network-doctor: unexpected arguments: %v\n", positional[1:])
+		fmt.Fprintf(stderr, "netdoc: unexpected arguments: %v\n", positional[1:])
 		return 2
 	}
 	if *showVersion {
-		fmt.Fprintln(stdout, "network-doctor", version)
+		fmt.Fprintln(stdout, "netdoc", version)
 		return 0
 	}
 	if *timeout <= 0 {
-		fmt.Fprintln(stderr, "network-doctor: -timeout must be positive")
+		fmt.Fprintln(stderr, "netdoc: -timeout must be positive")
 		return 2
 	}
 	diagnostic.ProbeTimeout = *timeout
 	if *jsonOut && *toolbox {
-		fmt.Fprintln(stderr, "network-doctor: -json and -toolbox cannot be combined")
+		fmt.Fprintln(stderr, "netdoc: -json and -toolbox cannot be combined")
 		return 2
 	}
 
@@ -73,7 +73,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(positional) == 1 {
 		parsed, err := diagnostic.ParseTarget(positional[0])
 		if err != nil {
-			fmt.Fprintln(stderr, "network-doctor:", err)
+			fmt.Fprintln(stderr, "netdoc:", err)
 			return 2 // bad args / validation reject
 		}
 		t = parsed
@@ -86,7 +86,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	p := tea.NewProgram(ui.New(t, *toolbox), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	final, err := p.Run()
 	if err != nil {
-		fmt.Fprintln(stderr, "network-doctor:", err)
+		fmt.Fprintln(stderr, "netdoc:", err)
 		return 1
 	}
 	return ui.ExitCode(final)
@@ -95,7 +95,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 // printUsage writes the full help text: usage line, the target grammar
 // ParseTarget accepts, and the flags.
 func printUsage(w io.Writer, fs *flag.FlagSet) {
-	fmt.Fprint(w, `Usage: network-doctor [flags] [target]
+	fmt.Fprint(w, `Usage: netdoc [flags] [target]
 
 Diagnoses network connectivity layer by layer. With no target it runs the
 generic checks; with a target it also probes that endpoint. Flags may be
@@ -150,7 +150,7 @@ func runJSON(t *diagnostic.Target, stdout, stderr io.Writer) int {
 	enc := json.NewEncoder(stdout)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(rep); err != nil {
-		fmt.Fprintln(stderr, "network-doctor:", err)
+		fmt.Fprintln(stderr, "netdoc:", err)
 		return 1
 	}
 	if rep.OK {

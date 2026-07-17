@@ -19,12 +19,12 @@ func TestRun(t *testing.T) {
 		wantStdout string
 		wantStderr string
 	}{
-		{"version", []string{"-version"}, 0, "network-doctor dev", ""},
+		{"version", []string{"-version"}, 0, "netdoc dev", ""},
 		{"bad flag", []string{"-nope"}, 2, "", "flag provided but not defined"},
 		{"extra args", []string{"example.com", "extra"}, 2, "", "unexpected arguments"},
-		{"bad target", []string{"bad_host!"}, 2, "", "network-doctor:"},
+		{"bad target", []string{"bad_host!"}, 2, "", "netdoc:"},
 		{"json+toolbox", []string{"-json", "-toolbox"}, 2, "", "cannot be combined"},
-		{"version ignores bad timeout", []string{"-timeout", "-1s", "-version"}, 0, "network-doctor dev", ""},
+		{"version ignores bad timeout", []string{"-timeout", "-1s", "-version"}, 0, "netdoc dev", ""},
 		{"bad timeout", []string{"-timeout", "-1s"}, 2, "", "-timeout must be positive"},
 	}
 	for _, tt := range tests {
@@ -48,7 +48,7 @@ func TestRun(t *testing.T) {
 // const itself — without freezing stdlib flag formatting.
 func TestPrintUsageTargetForms(t *testing.T) {
 	var buf bytes.Buffer
-	printUsage(&buf, flag.NewFlagSet("network-doctor", flag.ContinueOnError))
+	printUsage(&buf, flag.NewFlagSet("netdoc", flag.ContinueOnError))
 	want := "Target forms:\n" + diagnostic.TargetForms + "\n\nFlags:"
 	if !strings.Contains(buf.String(), want) {
 		t.Errorf("usage output missing the target-forms section:\n%s", buf.String())
