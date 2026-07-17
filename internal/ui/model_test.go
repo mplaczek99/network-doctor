@@ -391,6 +391,16 @@ func TestSelectionClamp(t *testing.T) {
 	}
 }
 
+func TestWheelIgnoredByRestartPrompt(t *testing.T) {
+	m := newModel(nil, false)
+	u, _ := m.Update(keyMsg("r"))
+	m = asModel(t, u)
+	u, _ = m.Update(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelDown})
+	if selected := asModel(t, u).selected; selected != 0 {
+		t.Errorf("wheel down selected = %d, want 0 while restart prompt is open", selected)
+	}
+}
+
 func TestExitCode(t *testing.T) {
 	m := newModel(nil, false)
 	if ExitCode(m) != 1 {

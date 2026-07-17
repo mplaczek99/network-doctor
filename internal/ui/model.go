@@ -232,6 +232,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 
 	case tea.MouseMsg:
+		if m.confirmTool != nil || m.entering {
+			return m, nil
+		}
 		if m.viewing {
 			var cmd tea.Cmd
 			m.vp, cmd = m.vp.Update(msg)
