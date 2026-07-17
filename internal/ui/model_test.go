@@ -22,6 +22,14 @@ func newModel(t *diagnostic.Target, toolbox bool) model { return New(t, toolbox)
 
 func keyMsg(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
 
+func TestReportReadyWithoutToolRun(t *testing.T) {
+	m := newModel(nil, false)
+	doneResults(&m, "")
+	if !m.reportReady() {
+		t.Error("completed checks must be exportable without running a tool")
+	}
+}
+
 // A probeDoneMsg from a stale generation is dropped (mirrors the gen guard).
 func TestStaleProbeDropped(t *testing.T) {
 	m := newModel(nil, false)
