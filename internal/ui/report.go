@@ -79,8 +79,6 @@ func osc52Mode() osc52.Mode {
 	switch {
 	case os.Getenv("TMUX") != "":
 		return osc52.TmuxMode
-	case os.Getenv("STY") != "":
-		return osc52.ScreenMode
 	default:
 		return osc52.DefaultMode
 	}

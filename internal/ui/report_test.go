@@ -78,18 +78,14 @@ func TestOSC52Mode(t *testing.T) {
 	tests := []struct {
 		name string
 		tmux string
-		sty  string
 		want osc52.Mode
 	}{
 		{name: "terminal", want: osc52.DefaultMode},
 		{name: "tmux", tmux: "tmux", want: osc52.TmuxMode},
-		{name: "screen", sty: "screen", want: osc52.ScreenMode},
-		{name: "nested prefers tmux", tmux: "tmux", sty: "screen", want: osc52.TmuxMode},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("TMUX", tt.tmux)
-			t.Setenv("STY", tt.sty)
 			if got := osc52Mode(); got != tt.want {
 				t.Errorf("osc52Mode() = %v, want %v", got, tt.want)
 			}
