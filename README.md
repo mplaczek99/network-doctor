@@ -15,7 +15,6 @@ Network Doctor  github.com:443  ·  Wi-Fi: HomeNet
 ✗ Cannot resolve github.com — DNS failure. (The general internet is reachable.)
   Fix: check /etc/resolv.conf / DNS
   Next: press d — DNS lookup (dig)
-  Press f to try a fix (resolvectl flush-caches) — the checks restart to verify.
 
 Checks                        Details — DNS github.com
 ✓ › Interface                 FAIL — no A records
@@ -142,19 +141,8 @@ literals are accepted bare (`::1`) or bracketed with a port (`[::1]:443`).
 | `enter` | open the current tool job's output in a scrollable full-screen viewer |
 | `y` (viewer) | copy the viewer's retained full output (up to 5,000 lines) |
 | `r` | restart — opens a prompt to edit the `network-doctor` arguments (`enter` runs, `esc` backs out) |
-| `f` | try an automatic fix for the first failed check, then restart the chain to verify |
 | `y` / `w` | yank / write (copy / save) a report of the chain plus the completed tool output |
 | `q` | quit |
-
-**Auto-fix** (`f`, experimental): runs a mild, OS-specific remedy through the
-same job pipeline as the drill-down tools — flush the DNS cache
-(`resolvectl flush-caches` / `dscacheutil -flushcache` / `ipconfig /flushdns`)
-for a DNS failure, `nmcli networking on` for a downed interface on Linux. No
-sudo, no config rewrites. When the fix job ends, the whole chain restarts
-automatically — that restart is the verification, labeled in the banner. Remote
-failures (target TCP/TLS/HTTP) have no local fix and offer none. The fix
-selection and verify flow are unit-tested; the fix commands themselves haven't
-been exercised against real broken networks on every OS yet.
 
 ## Drill-down tools
 
@@ -258,8 +246,7 @@ Windows only. Everything load-bearing (route table cells, the untranslated
 Implemented: native DAG probes + diagnosis engine + two-pane UI, cancellable
 streaming tool jobs (`ping`/`dig`/`curl`/`traceroute`/`mtr`/`ss`/`ip`/`nmap`) +
 a scrollable output viewer + `--toolbox` mode, the `Warn` state, proxy-aware
-diagnosis, `--json` output, report copy/save, and an experimental `f`
-auto-fix-and-verify hotkey.
+diagnosis, `--json` output, and report copy/save.
 
 Still to come: mtr-parsed route quality and multiple concurrent jobs.
 

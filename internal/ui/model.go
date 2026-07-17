@@ -42,7 +42,6 @@ const (
 	pendQuit pendingKind = iota
 	pendRestart
 	pendTool
-	pendFix
 )
 
 type pendingAction struct {
@@ -105,12 +104,6 @@ type model struct {
 	// Confirm gate: a tool marked Confirm (nmap) is held here after its hotkey,
 	// showing the exact command until 'y' runs it or any other key cancels.
 	confirmTool *Tool
-
-	// Auto-fix (f): fixing marks the active job as a fix command — when its
-	// terminal event arrives the chain restarts to verify the fix. verifying
-	// labels that restart's verdict in the banner.
-	fixing    bool
-	verifying bool
 
 	toolbox bool // --toolbox: chain deferred until 'r'
 
@@ -314,14 +307,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.jobDur = time.Since(m.jobStart)
 		if m.pending != nil {
 			p := m.pending
-			m.pending, m.fixing = nil, false // a deferred action overrides the fix flow
+			m.pending = nil
 			return m.runPending(p)
-		}
-		if m.fixing {
-			m.fixing = false
-			cmd := m.doRestart() // verification restart — the fix's real verdict
-			m.verifying = true
-			return m, cmd
 		}
 		return m, nil
 
@@ -394,19 +381,6 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.noticeDeadline = time.Now().Add(noticeWindow)
 		deadline := m.noticeDeadline
 		return m, tea.Tick(noticeWindow, func(time.Time) tea.Msg { return noticeDoneMsg{deadline: deadline} })
-	case "f":
-		fix := m.fixTool()
-		if fix == nil || m.fixing {
-			return m, nil // no fix, or the fix is already running
-		}
-		if m.activeJob != nil {
-			m.activeJob.cancel()
-			m.pending = &pendingAction{kind: pendFix, tool: *fix}
-			return m, nil
-		}
-		cmd := m.launchTool(*fix)
-		m.fixing = m.activeJob != nil // only a job that actually started can verify
-		return m, cmd
 	}
 	// Tool hotkeys (contextual toolbox).
 	for _, tool := range m.tools {
@@ -540,26 +514,8 @@ func (m *model) runPending(p *pendingAction) (tea.Model, tea.Cmd) {
 		return m, m.doRestart()
 	case pendTool:
 		return m, m.launchTool(p.tool)
-	case pendFix:
-		cmd := m.launchTool(p.tool)
-		m.fixing = m.activeJob != nil
-		return m, cmd
 	}
 	return m, nil
-}
-
-// fixTool returns the auto-fix for the first failed probe, or nil when the run
-// isn't finished, nothing failed, or no safe local fix exists.
-func (m model) fixTool() *Tool {
-	if !m.allDone() {
-		return nil
-	}
-	for _, p := range m.probes {
-		if m.results[p.ID].Status == diagnostic.StatusFail {
-			return fixFor(p.ID, runtime.GOOS)
-		}
-	}
-	return nil
 }
 
 // doRestart bumps the generation (invalidating outstanding probe/job messages),
@@ -574,7 +530,6 @@ func (m *model) doRestart() tea.Cmd {
 	m.results = map[diagnostic.ProbeID]diagnostic.ProbeResult{}
 	m.started = map[diagnostic.ProbeID]bool{}
 	m.activeJob, m.pending, m.confirmTool = nil, nil, nil
-	m.fixing, m.verifying = false, false
 	m.notice = ""
 	if m.viewing {
 		m.refreshViewport()
@@ -1007,9 +962,6 @@ func (m model) helpView(deferred bool) string {
 	if hasJob {
 		kv = append(kv, "enter", "full output")
 	}
-	if m.fixTool() != nil && !m.fixing {
-		kv = append(kv, "f", "try a fix")
-	}
 	if m.reportReady() {
 		kv = append(kv, "y", "copy report", "w", "save report")
 	}
@@ -1050,26 +1002,13 @@ func (m model) banner() string {
 	summary := diagnostic.Diagnose(m.target, order, m.results)
 	if firstFail == nil {
 		if anyWarn {
-			if m.verifying {
-				summary = "Fix verified: " + summary
-			}
 			return warnStyle.Render("! " + summary)
 		}
-		if m.verifying {
-			summary = "Fix verified: " + summary
-		}
 		return passStyle.Render("✓ " + summary)
-	}
-	if m.verifying {
-		summary = "Fix didn't help: " + summary
 	}
 	lines := []string{failStyle.Render("✗ " + summary)}
 	if firstFail.Fix != "" {
 		lines = append(lines, faintStyle.Render("  Fix: "+firstFail.Fix))
-	}
-	if fix := m.fixTool(); fix != nil {
-		_, _, display := fix.Build(m.target)
-		lines = append(lines, "  Press "+selStyle.Render("f")+" to try a fix ("+display+") — the checks restart to verify.")
 	}
 	if next := m.nextStep(firstFail.ID); next != "" {
 		lines = append(lines, "  "+next)

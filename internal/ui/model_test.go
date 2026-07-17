@@ -22,6 +22,28 @@ func newModel(t *diagnostic.Target, toolbox bool) model { return New(t, toolbox)
 
 func keyMsg(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
 
+// doneResults fills every probe with a result: failID fails, the rest pass.
+// An empty failID means an all-pass run.
+func doneResults(m *model, failID diagnostic.ProbeID) {
+	for _, p := range m.probes {
+		status := diagnostic.StatusPass
+		if p.ID == failID {
+			status = diagnostic.StatusFail
+		}
+		m.results[p.ID] = diagnostic.ProbeResult{ID: p.ID, Status: status}
+	}
+}
+
+func TestFixShortcutRemoved(t *testing.T) {
+	m := newModel(nil, false)
+	doneResults(&m, diagnostic.ProbeDNS)
+	u, cmd := m.Update(keyMsg("f"))
+	nm := asModel(t, u)
+	if cmd != nil || nm.activeJob != nil || nm.pending != nil {
+		t.Error("f must not launch or defer an automatic fix")
+	}
+}
+
 func TestReportReadyWithoutToolRun(t *testing.T) {
 	m := newModel(nil, false)
 	doneResults(&m, "")
