@@ -524,8 +524,8 @@ func (m model) runPending(p *pendingAction) (tea.Model, tea.Cmd) {
 }
 
 // doRestart bumps the generation (invalidating outstanding probe/job messages),
-// clears run state, resets the context, and reschedules from the root. The last
-// job remains viewable until launchTool replaces it.
+// clears run state and old tool output, resets the context, and reschedules
+// from the root.
 func (m *model) doRestart() tea.Cmd {
 	wasTicking := m.spinnerActive()
 	m.clearCancel()
@@ -535,6 +535,7 @@ func (m *model) doRestart() tea.Cmd {
 	m.results = map[diagnostic.ProbeID]diagnostic.ProbeResult{}
 	m.started = map[diagnostic.ProbeID]bool{}
 	m.activeJob, m.pending, m.confirmTool = nil, nil, nil
+	m.jobLines, m.jobDropped, m.jobEvicted = nil, 0, 0
 	m.notice = ""
 	if m.viewing {
 		m.refreshViewport()

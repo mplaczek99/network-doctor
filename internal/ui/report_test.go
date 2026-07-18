@@ -183,3 +183,14 @@ func TestReportIncludesTimedOutToolOutput(t *testing.T) {
 		t.Errorf("timed-out tool output missing from report:\n%s", rep)
 	}
 }
+
+func TestRestartClearsToolOutputFromReport(t *testing.T) {
+	m := newModel(mustTarget(t, "example.com"), false)
+	m.jobDisplay = "ping old.example"
+	m.jobLines = []string{"reply from old.example"}
+	m.doRestart()
+
+	if rep := m.report(); strings.Contains(rep, "old.example") {
+		t.Errorf("restarted report contains previous tool output:\n%s", rep)
+	}
+}
