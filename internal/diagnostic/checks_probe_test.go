@@ -184,6 +184,26 @@ func TestBannerProbeReadTimeout(t *testing.T) {
 	}
 }
 
+func TestBannerProbeReadTimeoutHonorsContext(t *testing.T) {
+	client, server := net.Pipe()
+	t.Cleanup(func() { _ = server.Close() })
+	ops := &netops{dialContext: func(context.Context, string, string) (net.Conn, error) {
+		return client, nil
+	}}
+	deps := map[ProbeID]ProbeResult{ProbeTargetTCP: {SelectedIP: net.ParseIP("192.0.2.1")}}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	r := ops.bannerProbe(ProbeSSH, "SSH banner", 22).Run(ctx, deps)
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Errorf("banner probe took %v, want context deadline to cap the read", elapsed)
+	}
+	if r.Status != StatusWarn {
+		t.Errorf("silent server = %+v, want WARN", r)
+	}
+}
+
 // Dependent probes fed an empty/zero dependency map degrade to their explicit
 // fail/skip states — no nil-deref, no accidental pass.
 func TestProbesMalformedDeps(t *testing.T) {

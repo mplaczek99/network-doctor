@@ -525,10 +525,14 @@ func (o *netops) bannerProbe(id ProbeID, label string, port int) Probe {
 			return r
 		}
 		defer conn.Close()
-		// Flat 2s rather than the whole probe budget: a banner arrives
-		// immediately or (shy server) never — waiting longer only delays the
-		// Warn. Deadline, not ctx: net.Conn reads don't honor ctx.
-		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		// A banner arrives immediately or (shy server) never. Keep the short
+		// read leash, capped by the remaining probe budget because net.Conn
+		// reads don't honor ctx directly.
+		deadline := time.Now().Add(2 * time.Second)
+		if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+			deadline = ctxDeadline
+		}
+		conn.SetReadDeadline(deadline)
 		// Strict byte limit: a hostile server streaming without a newline can't
 		// exhaust memory.
 		br := bufio.NewReader(io.LimitReader(conn, 1024))
