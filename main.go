@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/heymaikol/network-doctor/internal/diagnostic"
@@ -16,6 +17,19 @@ import (
 
 // version is injected by GoReleaser via -X main.version={{.Version}}.
 var version = "dev"
+
+func init() {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		version = versionString(version, info.Main.Version)
+	}
+}
+
+func versionString(injected, module string) string {
+	if injected == "dev" && module != "" && module != "(devel)" {
+		return module
+	}
+	return injected
+}
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))

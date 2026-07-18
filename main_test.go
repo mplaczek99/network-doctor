@@ -10,6 +10,23 @@ import (
 	"github.com/heymaikol/network-doctor/internal/diagnostic"
 )
 
+func TestVersionString(t *testing.T) {
+	tests := []struct {
+		name, injected, module, want string
+	}{
+		{"injected wins", "1.2.3", "v9.9.9", "1.2.3"},
+		{"module fallback", "dev", "v1.2.3", "v1.2.3"},
+		{"development build", "dev", "(devel)", "dev"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := versionString(tt.injected, tt.module); got != tt.want {
+				t.Errorf("versionString(%q, %q) = %q, want %q", tt.injected, tt.module, got, tt.want)
+			}
+		})
+	}
+}
+
 // Only exercises paths that return before the TUI starts.
 func TestRun(t *testing.T) {
 	tests := []struct {
