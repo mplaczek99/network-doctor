@@ -126,7 +126,7 @@ Each row in the diagnosis is *evidence*; when you want proof, run a real tool as
 a cancellable streaming job (one at a time). The contextual toolbox shows the
 tools available for the current target with their hotkeys — missing binaries are
 greyed out with an install hint. Output is bounded and sanitized (no
-terminal-escape injection from a hostile server); the last 15 stdout lines are
+terminal-escape injection from a hostile server); the last 15 output lines are
 included in reports after a tool finishes.
 
 The same hotkeys map to each OS's built-in tools:
@@ -157,10 +157,9 @@ key happens to authenticate.
 
 The routes/sockets tools are target-independent; the rest need a host. Tools are
 run with an argument slice (never a shell string), in their own process group on
-Unix (cancel kills descendants too), unprivileged — on a permission error you get
-the command to re-run with `sudo`, never an auto-escalation. The displayed
-command is copy-pasteable in a POSIX shell (Linux/macOS) or PowerShell (Windows;
-cmd.exe paste is not supported).
+Unix (cancel kills descendants too), and without privilege escalation. The
+displayed command is copy-pasteable in a POSIX shell (Linux/macOS) or PowerShell
+(Windows; cmd.exe paste is not supported).
 
 `--toolbox [<host>]` opens straight into the toolbox without auto-running the
 chain (press `r` to run it). With no host, only the target-independent tools are
@@ -213,9 +212,8 @@ degrade to empty rather than failing a probe.
 
 **Windows localization caveat**: console tools emit the OEM code page, so
 non-ASCII localized text in raw tool output shows as visible `?` replacement
-characters, and ping fact extraction (`% loss`, `Average`) works on English
-Windows only. Everything load-bearing (route table cells, the untranslated
-`SSID` label, nslookup addresses) is parsed locale-independently.
+characters. Everything load-bearing (route table cells, the untranslated `SSID`
+label, nslookup addresses) is parsed locale-independently.
 
 ## Roadmap
 
