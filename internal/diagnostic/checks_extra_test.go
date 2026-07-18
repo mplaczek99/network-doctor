@@ -235,6 +235,17 @@ func TestProxyProbeNoProxyIsNA(t *testing.T) {
 	}
 }
 
+func TestProxyProbeSocksIsNA(t *testing.T) {
+	ops := proxyOps("socks5://proxy.corp", func(context.Context, string, string) (net.Conn, error) {
+		t.Fatal("SOCKS proxy must not receive an HTTP CONNECT probe")
+		return nil, nil
+	})
+	r := ops.proxyProbe(context.Background(), nil)
+	if r.Status != StatusNA || !strings.Contains(r.Detail, "socks5") {
+		t.Errorf("SOCKS proxy = %+v, want N/A", r)
+	}
+}
+
 func TestProxyProbeUnreachable(t *testing.T) {
 	var dialed string
 	ops := proxyOps("http://proxy.corp", func(_ context.Context, _, addr string) (net.Conn, error) {

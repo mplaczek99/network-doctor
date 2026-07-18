@@ -307,6 +307,11 @@ func (o *netops) proxyProbe(ctx context.Context, _ map[ProbeID]ProbeResult) Prob
 		r.Detail = "no proxy in environment (HTTPS_PROXY/HTTP_PROXY unset)"
 		return r
 	}
+	if proxyURL.Scheme != "http" && proxyURL.Scheme != "https" {
+		r.Status = StatusNA
+		r.Detail = "proxy scheme " + textsafe.Clean(proxyURL.Scheme) + " is not supported by this probe"
+		return r
+	}
 	addr := proxyURL.Host
 	if proxyURL.Port() == "" {
 		port := "80"
