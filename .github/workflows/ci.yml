@@ -26,6 +26,10 @@ jobs:
       # The job runner does concurrent subprocess cancellation; gate it.
       - if: runner.os == 'Linux'
         run: go test -race ./...
+      # Smoke-fuzz the output sanitizer so regressions don't rely on
+      # contributors remembering to fuzz locally.
+      - if: runner.os == 'Linux'
+        run: go test -fuzz=FuzzSanitize -fuzztime=10s ./internal/textsafe
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -34,3 +38,9 @@ jobs:
         with:
           go-version-file: go.mod
       - uses: golangci/golangci-lint-action@v9
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      # Validate the GoReleaser config here so breakage surfaces before tag day.
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: check
