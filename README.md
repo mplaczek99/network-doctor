@@ -5,43 +5,6 @@ connection breaks** in plain English — not just a wall of tool output.
 
 ![Network Doctor diagnosing github.com:443](assets/demo.gif)
 
-## How it diagnoses
-
-Probes form a **dependency graph with independent branches**, so an unrelated
-failure never hides a working one:
-
-- **Direct-egress path** (independent of DNS): `Interface → Internet (TCP
-  egress)`. Always runs, so "DNS is down but the internet is up" is diagnosable.
-- **Proxy-egress path** (independent of both): `Interface → Internet (env
-  proxy)`. The native probes deliberately bypass proxies, so this row reports
-  the environment-configured proxy separately — a proxy-only corporate network
-  reads as "online via proxy" instead of offline.
-- **Plain HTTP path**: `Interface → DNS → HTTP :80`.
-- **Selected target path**: `Interface → DNS → TCP → TLS → HTTPS` for secure
-  web targets, or the applicable protocol row for other ports.
-
-Each row is one of five states: **✓ Pass**, **! Warn** (reachable but degraded —
-high latency, some addresses failing, ambiguous source interface), **✗ Fail**,
-**⊘ Skip** (a prerequisite failed), or **– N/A** (doesn't apply — e.g. DNS on an
-IP literal). A Warn never counts as a failure.
-
-| Probe | Passes when | Notes |
-|-------|-------------|-------|
-| **Interface** | A non-loopback interface is up and running | |
-| **Internet (TCP egress)** | A TCP connect to well-known anycast `:443` endpoints succeeds | IPv4 and IPv6 probed independently in parallel; either family passes, both are reported |
-| **Internet (env proxy)** | The `HTTPS_PROXY`/`HTTP_PROXY` proxy grants a `CONNECT` tunnel | N/A when no proxy is configured; honors `NO_PROXY` |
-| **DNS** | The host resolves to an IPv4 or IPv6 address (system resolution) | IP-literal targets are N/A; all A/AAAA records are retained |
-| **TCP** | A TCP connect to the target port succeeds | races A/AAAA records Happy-Eyeballs style (RFC 8305), pins the winner |
-| **TLS** | The TLS handshake (SNI + cert verification) succeeds | bad/expired cert, clock skew, or MITM → Fail |
-| **HTTP** | Port 80 returns any HTTP response (incl. 3xx/4xx/5xx) | Independent HEAD after DNS, redirects off, proxy off |
-| **HTTPS** | The selected TLS port returns any HTTP response | HEAD against the TLS-validated IP, redirects off, proxy off |
-| **SSH/SMTP banner** | TCP connects (banner read best-effort) | bounded read; "connected but silent" still passes |
-
-RTT is measured from the TCP-connect handshake (no ICMP, no root). The source IP
-and interface are read from the winning connection's `LocalAddr`, with a
-UDP-connect fallback (sends no packets) for path identity on failure. Every probe
-is bounded by a 4-second timeout.
-
 ## Install
 
 Runs on **Linux, macOS, and Windows**. The project is `network-doctor`; the
@@ -91,6 +54,43 @@ git clone https://github.com/heymaikol/network-doctor
 cd network-doctor
 go build -o netdoc .
 ```
+
+## How it diagnoses
+
+Probes form a **dependency graph with independent branches**, so an unrelated
+failure never hides a working one:
+
+- **Direct-egress path** (independent of DNS): `Interface → Internet (TCP
+  egress)`. Always runs, so "DNS is down but the internet is up" is diagnosable.
+- **Proxy-egress path** (independent of both): `Interface → Internet (env
+  proxy)`. The native probes deliberately bypass proxies, so this row reports
+  the environment-configured proxy separately — a proxy-only corporate network
+  reads as "online via proxy" instead of offline.
+- **Plain HTTP path**: `Interface → DNS → HTTP :80`.
+- **Selected target path**: `Interface → DNS → TCP → TLS → HTTPS` for secure
+  web targets, or the applicable protocol row for other ports.
+
+Each row is one of five states: **✓ Pass**, **! Warn** (reachable but degraded —
+high latency, some addresses failing, ambiguous source interface), **✗ Fail**,
+**⊘ Skip** (a prerequisite failed), or **– N/A** (doesn't apply — e.g. DNS on an
+IP literal). A Warn never counts as a failure.
+
+| Probe | Passes when | Notes |
+|-------|-------------|-------|
+| **Interface** | A non-loopback interface is up and running | |
+| **Internet (TCP egress)** | A TCP connect to well-known anycast `:443` endpoints succeeds | IPv4 and IPv6 probed independently in parallel; either family passes, both are reported |
+| **Internet (env proxy)** | The `HTTPS_PROXY`/`HTTP_PROXY` proxy grants a `CONNECT` tunnel | N/A when no proxy is configured; honors `NO_PROXY` |
+| **DNS** | The host resolves to an IPv4 or IPv6 address (system resolution) | IP-literal targets are N/A; all A/AAAA records are retained |
+| **TCP** | A TCP connect to the target port succeeds | races A/AAAA records Happy-Eyeballs style (RFC 8305), pins the winner |
+| **TLS** | The TLS handshake (SNI + cert verification) succeeds | bad/expired cert, clock skew, or MITM → Fail |
+| **HTTP** | Port 80 returns any HTTP response (incl. 3xx/4xx/5xx) | Independent HEAD after DNS, redirects off, proxy off |
+| **HTTPS** | The selected TLS port returns any HTTP response | HEAD against the TLS-validated IP, redirects off, proxy off |
+| **SSH/SMTP banner** | TCP connects (banner read best-effort) | bounded read; "connected but silent" still passes |
+
+RTT is measured from the TCP-connect handshake (no ICMP, no root). The source IP
+and interface are read from the winning connection's `LocalAddr`, with a
+UDP-connect fallback (sends no packets) for path identity on failure. Every probe
+is bounded by a 4-second timeout.
 
 ## Usage
 
