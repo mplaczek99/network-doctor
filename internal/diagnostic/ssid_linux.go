@@ -18,15 +18,13 @@ const siocgiwessid = 0x8B1B
 // iwEssidMaxSize is IW_ESSID_MAX_SIZE: the longest ESSID the kernel returns.
 const iwEssidMaxSize = 32
 
-// iwreq mirrors the kernel's struct iwreq for the ESSID iw_point case. The
-// trailing pad makes it 32 bytes == sizeof(struct iwreq) on amd64, so the
-// kernel's copy_from_user stays in bounds.
+// iwreq mirrors the kernel's 32-byte struct iwreq for the ESSID iw_point case.
 type iwreq struct {
 	name    [16]byte
 	pointer *byte
 	length  uint16
 	flags   uint16
-	_       [4]byte
+	_       [12 - unsafe.Sizeof(uintptr(0))]byte
 }
 
 // ssid returns the Wi-Fi network name for iface, or "" if it isn't wireless,

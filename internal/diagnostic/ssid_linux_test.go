@@ -2,7 +2,12 @@
 
 package diagnostic
 
-import "testing"
+import (
+	"testing"
+	"unsafe"
+)
+
+var _ [32]byte = [unsafe.Sizeof(iwreq{})]byte{}
 
 func TestParseESSID(t *testing.T) {
 	cases := []struct {
