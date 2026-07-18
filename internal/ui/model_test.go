@@ -323,7 +323,7 @@ func TestCtrlCWarnsThenQuits(t *testing.T) {
 		t.Error("first ctrl+c must show the quit hint")
 	}
 
-	expired, _ := nm.Update(noticeDoneMsg{deadline: nm.ctrlCDeadline})
+	expired, _ := nm.Update(noticeDoneMsg{deadline: nm.noticeDeadline})
 	if strings.Contains(asModel(t, expired).View(), "Press Ctrl+C again (or q) to quit") {
 		t.Error("quit hint must clear after the timeout")
 	}

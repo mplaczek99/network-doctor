@@ -111,7 +111,6 @@ type model struct {
 	notice         string
 	noticeOK       bool
 	noticeDeadline time.Time
-	ctrlCDeadline  time.Time
 
 	width, height int
 }
@@ -183,6 +182,17 @@ func (m model) spinnerActive() bool {
 	return ((!m.toolbox || m.generation > 0 || m.chainRan()) && !m.allDone()) || m.activeJob != nil
 }
 
+func (m *model) setNotice(msg string, ok bool) tea.Cmd {
+	window := noticeWindow
+	if msg == ctrlCNotice {
+		window = ctrlCWindow
+	}
+	m.notice, m.noticeOK = msg, ok
+	m.noticeDeadline = time.Now().Add(window)
+	deadline := m.noticeDeadline
+	return tea.Tick(window, func(time.Time) tea.Msg { return noticeDoneMsg{deadline: deadline} })
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
@@ -198,17 +208,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleConfirmKey(msg)
 		}
 		if msg.Type == tea.KeyCtrlC {
-			now := time.Now()
-			if now.Before(m.ctrlCDeadline) {
+			if m.notice == ctrlCNotice && time.Now().Before(m.noticeDeadline) {
 				return m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 			}
-			m.ctrlCDeadline = now.Add(ctrlCWindow)
-			m.noticeDeadline = m.ctrlCDeadline
-			m.notice, m.noticeOK = ctrlCNotice, false
-			deadline := m.ctrlCDeadline
-			return m, tea.Tick(ctrlCWindow, func(time.Time) tea.Msg {
-				return noticeDoneMsg{deadline: deadline}
-			})
+			return m, m.setNotice(ctrlCNotice, false)
 		}
 		// Runes read from stdin in one batch arrive as a single KeyMsg
 		// ("jjj"), which matches no binding; replay them one key at a time.
@@ -255,9 +258,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case noticeDoneMsg:
-		if msg.deadline.Equal(m.ctrlCDeadline) {
-			m.ctrlCDeadline = time.Time{}
-		}
 		if msg.deadline.Equal(m.noticeDeadline) {
 			m.noticeDeadline = time.Time{}
 			m.notice = ""
@@ -382,10 +382,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.reportReady() {
 			return m, nil
 		}
-		m.notice, m.noticeOK = exportReport(m.report(), msg.String() == "w")
-		m.noticeDeadline = time.Now().Add(noticeWindow)
-		deadline := m.noticeDeadline
-		return m, tea.Tick(noticeWindow, func(time.Time) tea.Msg { return noticeDoneMsg{deadline: deadline} })
+		notice, ok := exportReport(m.report(), msg.String() == "w")
+		return m, m.setNotice(notice, ok)
 	}
 	// Tool hotkeys (contextual toolbox).
 	for _, tool := range m.tools {
@@ -431,14 +429,11 @@ func (m model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewing = false
 		return m, nil
 	case "y":
+		notice, ok := "output copied to clipboard", true
 		if err := copyReport(m.jobOutput()); err != nil {
-			m.notice, m.noticeOK = "copy failed: "+err.Error(), false
-		} else {
-			m.notice, m.noticeOK = "output copied to clipboard", true
+			notice, ok = "copy failed: "+err.Error(), false
 		}
-		m.noticeDeadline = time.Now().Add(noticeWindow)
-		deadline := m.noticeDeadline
-		return m, tea.Tick(noticeWindow, func(time.Time) tea.Msg { return noticeDoneMsg{deadline: deadline} })
+		return m, m.setNotice(notice, ok)
 	case "home":
 		m.vp.GotoTop()
 		m.follow = false
