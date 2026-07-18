@@ -3,6 +3,16 @@
 A terminal UI that diagnoses your network connectivity and tells you **where the
 connection breaks** in plain English — not just a wall of tool output.
 
+![Network Doctor diagnosing github.com:443](assets/demo.gif)
+
+```sh
+yay -S network-doctor                                  # Arch Linux (AUR)
+brew install --cask heymaikol/tap/network-doctor       # macOS (Homebrew)
+go install github.com/heymaikol/network-doctor@latest  # anywhere with Go 1.26+
+```
+
+More options (prebuilt binaries, Windows) under [Install](#install).
+
 The home screen runs short, native, rootless probes as a small dependency graph,
 then a diagnosis engine turns their combined state into a plain-English verdict
 banner — on a failure it also shows the fix and suggests which drill-down tool
