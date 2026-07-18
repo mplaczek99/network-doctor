@@ -98,6 +98,8 @@ func TestRestartResets(t *testing.T) {
 	m := newModel(nil, false)
 	m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{Status: diagnostic.StatusPass}
 	m.started[diagnostic.ProbeIface] = true
+	m.jobStatus, m.jobName, m.jobDisplay, m.jobDur = JobDone, "ping", "ping example.com", 1
+	m.jobLines = []string{"reply from example.com"}
 	gen0 := m.generation
 	u, _ := m.Update(keyMsg("r"))
 	nm := asModel(t, u)
@@ -117,6 +119,16 @@ func TestRestartResets(t *testing.T) {
 	}
 	if nm.ctx != nil {
 		t.Error("restart must reset ctx to nil")
+	}
+	if nm.jobStatus != JobQueued || nm.jobName != "" || nm.jobDisplay != "" || nm.jobDur != 0 || len(nm.jobLines) != 0 {
+		t.Error("restart must clear the previous job")
+	}
+	if pane := nm.jobView(10); pane != "" {
+		t.Errorf("restart left a stale job pane: %q", pane)
+	}
+	u, _ = nm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if asModel(t, u).viewing {
+		t.Error("enter must not open the output viewer after restart")
 	}
 	if cmd == nil {
 		t.Fatal("restart must issue a cmd")

@@ -535,6 +535,7 @@ func (m *model) doRestart() tea.Cmd {
 	m.results = map[diagnostic.ProbeID]diagnostic.ProbeResult{}
 	m.started = map[diagnostic.ProbeID]bool{}
 	m.activeJob, m.pending, m.confirmTool = nil, nil, nil
+	m.jobStatus, m.jobName, m.jobDisplay, m.jobDur = JobQueued, "", "", 0
 	m.jobLines, m.jobDropped, m.jobEvicted = nil, 0, 0
 	m.notice = ""
 	if m.viewing {
