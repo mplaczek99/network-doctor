@@ -140,7 +140,7 @@ func streamReader(r io.Reader, id string, gen int, ch chan<- tea.Msg, dropped *i
 		line, err := readCappedLine(br)
 		if line != "" {
 			select {
-			case ch <- ToolOutputMsg{JobID: id, Generation: gen, Line: textsafe.Clean(winSafe(line))}:
+			case ch <- ToolOutputMsg{JobID: id, Generation: gen, Line: textsafe.Clean(strings.ToValidUTF8(line, "?"))}:
 			default:
 				atomic.AddInt64(dropped, 1)
 			}
@@ -187,9 +187,4 @@ func classifyJob(ctx context.Context, werr error) JobStatus {
 	default:
 		return JobFailed
 	}
-}
-
-// winSafe makes invalid UTF-8 visible instead of letting the sanitizer drop it.
-func winSafe(s string) string {
-	return strings.ToValidUTF8(s, "?")
 }
