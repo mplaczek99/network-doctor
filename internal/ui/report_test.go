@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,33 +14,17 @@ import (
 )
 
 func TestCopyReportPrefersNativeClipboard(t *testing.T) {
-	oldLookPath, oldRun := clipboardLookPath, clipboardRun
-	t.Cleanup(func() { clipboardLookPath, clipboardRun = oldLookPath, oldRun })
-
-	var lookedUp, run []string
-	clipboardLookPath = func(name string) (string, error) {
-		lookedUp = append(lookedUp, name)
-		if name == "wl-copy" || name == "xclip" {
-			return name, nil
-		}
-		return "", exec.ErrNotFound
-	}
-	clipboardRun = func(path string, args []string, rep string) error {
-		run = append(run, strings.Join(append([]string{path}, args...), " ")+":"+rep)
-		if path == "wl-copy" {
-			return errors.New("broken")
+	oldWriteAll := clipboardWriteAll
+	t.Cleanup(func() { clipboardWriteAll = oldWriteAll })
+	clipboardWriteAll = func(rep string) error {
+		if rep != "hello" {
+			t.Errorf("clipboard text = %q", rep)
 		}
 		return nil
 	}
 
 	if notice, ok := exportReport("hello", false); !ok || notice != "report copied to clipboard" {
 		t.Fatalf("exportReport() = %q, %v", notice, ok)
-	}
-	if got := strings.Join(lookedUp, ","); got != "wl-copy,xclip" {
-		t.Errorf("lookups = %q", got)
-	}
-	if got := strings.Join(run, ","); got != "wl-copy:hello,xclip -selection clipboard:hello" {
-		t.Errorf("commands = %q", got)
 	}
 }
 

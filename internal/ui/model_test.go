@@ -279,11 +279,10 @@ func TestViewerEscAndQGoBack(t *testing.T) {
 }
 
 func TestViewerCopiesFullOutput(t *testing.T) {
-	oldLookPath, oldRun := clipboardLookPath, clipboardRun
-	t.Cleanup(func() { clipboardLookPath, clipboardRun = oldLookPath, oldRun })
-	clipboardLookPath = func(string) (string, error) { return "wl-copy", nil }
+	oldWriteAll := clipboardWriteAll
+	t.Cleanup(func() { clipboardWriteAll = oldWriteAll })
 	var copied string
-	clipboardRun = func(_ string, _ []string, output string) error {
+	clipboardWriteAll = func(output string) error {
 		copied = output
 		return nil
 	}
@@ -341,10 +340,9 @@ func TestCtrlCWarnsThenQuits(t *testing.T) {
 }
 
 func TestReportNoticeExpires(t *testing.T) {
-	oldLookPath, oldRun := clipboardLookPath, clipboardRun
-	t.Cleanup(func() { clipboardLookPath, clipboardRun = oldLookPath, oldRun })
-	clipboardLookPath = func(string) (string, error) { return "wl-copy", nil }
-	clipboardRun = func(string, []string, string) error { return nil }
+	oldWriteAll := clipboardWriteAll
+	t.Cleanup(func() { clipboardWriteAll = oldWriteAll })
+	clipboardWriteAll = func(string) error { return nil }
 
 	m := newModel(nil, false)
 	doneResults(&m, "")

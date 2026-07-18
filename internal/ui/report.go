@@ -4,11 +4,11 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/heymaikol/network-doctor/internal/diagnostic"
 	"github.com/heymaikol/network-doctor/internal/textsafe"
 )
@@ -47,27 +47,12 @@ func exportReport(rep string, save bool) (notice string, ok bool) {
 var (
 	reportWriteFile   = os.WriteFile
 	reportUserHomeDir = os.UserHomeDir
-	clipboardLookPath = exec.LookPath
-	clipboardRun      = func(path string, args []string, rep string) error {
-		cmd := exec.Command(path, args...)
-		cmd.Stdin = strings.NewReader(rep)
-		return cmd.Run()
-	}
+	clipboardWriteAll = clipboard.WriteAll
 )
 
 func copyReport(rep string) error {
-	for _, c := range []struct {
-		name string
-		args []string
-	}{
-		{name: "wl-copy"},
-		{name: "xclip", args: []string{"-selection", "clipboard"}},
-		{name: "pbcopy"},
-	} {
-		path, err := clipboardLookPath(c.name)
-		if err == nil && clipboardRun(path, c.args, rep) == nil {
-			return nil
-		}
+	if clipboardWriteAll(rep) == nil {
+		return nil
 	}
 	// stderr, because Bubble Tea owns stdout: both reach the tty, but only one
 	// of them is fighting the renderer for it mid-frame.
