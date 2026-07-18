@@ -21,12 +21,13 @@ type silentConn struct{ fakeConn }
 func (silentConn) Read([]byte) (int, error)        { return 0, os.ErrDeadlineExceeded }
 func (silentConn) SetReadDeadline(time.Time) error { return nil }
 
-// dialIPs never attempts more than maxAttempts addresses, no matter how many
-// the resolver returned.
-func TestDialIPsAttemptCap(t *testing.T) {
+// Target TCP reports only the addresses dialIPs actually attempted.
+func TestTargetTCPProbeAttemptCap(t *testing.T) {
 	calls := 0
-	ops := &netops{dialContext: func(context.Context, string, string) (net.Conn, error) {
-		calls++
+	ops := &netops{dialContext: func(_ context.Context, network, _ string) (net.Conn, error) {
+		if network == "tcp" {
+			calls++
+		}
 		return nil, errors.New("connection refused")
 	}}
 	ips := make([]net.IP, maxAttempts+4)
@@ -34,12 +35,12 @@ func TestDialIPsAttemptCap(t *testing.T) {
 		ips[i] = net.ParseIP(fmt.Sprintf("192.0.2.%d", i+1))
 	}
 
-	conn, _, attempts, _ := ops.dialIPs(context.Background(), ips, 80)
-	if conn != nil {
-		t.Fatal("expected no connection from the failing dialer")
+	r := ops.targetTCPProbe(80)(context.Background(), map[ProbeID]ProbeResult{ProbeDNS: {Addrs: ips}})
+	if calls != maxAttempts || len(r.Attempts) != maxAttempts {
+		t.Errorf("calls = %d, attempts = %d, want %d each", calls, len(r.Attempts), maxAttempts)
 	}
-	if calls != maxAttempts || len(attempts) != maxAttempts {
-		t.Errorf("calls = %d, attempts = %d, want %d each", calls, len(attempts), maxAttempts)
+	if want := fmt.Sprintf("port 80 unreachable on all %d address(es)", len(r.Attempts)); r.Detail != want {
+		t.Errorf("detail = %q, want %q", r.Detail, want)
 	}
 }
 

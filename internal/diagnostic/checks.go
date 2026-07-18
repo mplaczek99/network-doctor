@@ -417,7 +417,7 @@ func (o *netops) targetTCPProbe(port int) func(context.Context, map[ProbeID]Prob
 		// All addresses failed: deterministic fallback path = first address.
 		src, iface := o.pathIdentity(ctx, nil, addrs[0], port)
 		r.Status, r.Source, r.Iface = StatusFail, src, iface
-		r.Detail = fmt.Sprintf("port %d unreachable on all %d address(es)", port, len(addrs))
+		r.Detail = fmt.Sprintf("port %d unreachable on all %d address(es)", port, len(attempts))
 		r.Fix = fmt.Sprintf("port %d blocked/refused — firewall, wrong network, or VPN routing?", port)
 		return r
 	}
