@@ -130,7 +130,6 @@ type netops struct {
 	dialContext    func(ctx context.Context, network, addr string) (net.Conn, error)
 	dialTLS        func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error)
 	ssid           func(ctx context.Context, iface string) string
-	defaultRoute   func(ctx context.Context) (string, bool, error)
 	proxyFromEnv   func(*http.Request) (*url.URL, error)
 }
 
@@ -146,7 +145,6 @@ var defaultOps = &netops{
 		return d.DialContext(ctx, network, addr)
 	},
 	ssid:         ssid,
-	defaultRoute: defaultRoute,
 	proxyFromEnv: http.ProxyFromEnvironment,
 }
 
@@ -271,9 +269,6 @@ func (o *netops) internetProbe(ctx context.Context, _ map[ProbeID]ProbeResult) P
 		r.Detail += fmt.Sprintf("; %s egress via %s in %dms", secName, sec.sel, sec.rtt.Milliseconds())
 	} else {
 		r.Detail += "; no " + secName + " egress"
-	}
-	if gw, found, _ := o.defaultRoute(ctx); found {
-		r.Detail += "; default route via " + gw
 	}
 	// Warnings judge only the winning family: a network without the other
 	// family at all is normal, not degraded. The other family's attempts are

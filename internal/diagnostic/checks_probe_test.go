@@ -130,8 +130,7 @@ func TestInternetProbeFamilies(t *testing.T) {
 			}
 			return fakeConn{}, nil
 		},
-		interfaces:   func() ([]net.Interface, error) { return nil, nil },
-		defaultRoute: func(context.Context) (string, bool, error) { return "", false, nil },
+		interfaces: func() ([]net.Interface, error) { return nil, nil },
 	}
 	r := v4only.internetProbe(context.Background(), nil)
 	if r.Status != StatusPass || !strings.Contains(r.Detail, "IPv4 egress via") || !strings.Contains(r.Detail, "no IPv6 egress") {
@@ -142,8 +141,7 @@ func TestInternetProbeFamilies(t *testing.T) {
 		dialContext: func(context.Context, string, string) (net.Conn, error) {
 			return nil, errors.New("no route to host")
 		},
-		interfaces:   func() ([]net.Interface, error) { return nil, nil },
-		defaultRoute: func(context.Context) (string, bool, error) { return "", false, nil },
+		interfaces: func() ([]net.Interface, error) { return nil, nil },
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

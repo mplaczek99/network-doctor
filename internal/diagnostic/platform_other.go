@@ -4,9 +4,7 @@ package diagnostic
 
 import "context"
 
-// Unsupported GOOSes compile with the cosmetic gateway/SSID fields empty
-// (untested targets; see PLAN.md "Out of scope").
-
-func defaultRoute(context.Context) (string, bool, error) { return "", false, nil }
+// Unsupported GOOSes compile with the cosmetic SSID field empty (untested
+// targets; see PLAN.md "Out of scope").
 
 func ssid(context.Context, string) string { return "" }
