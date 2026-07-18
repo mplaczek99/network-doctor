@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aymanbagabas/go-osc52/v2"
 	"github.com/heymaikol/network-doctor/internal/diagnostic"
 	"github.com/heymaikol/network-doctor/internal/textsafe"
 )
@@ -71,17 +71,16 @@ func copyReport(rep string) error {
 	}
 	// stderr, because Bubble Tea owns stdout: both reach the tty, but only one
 	// of them is fighting the renderer for it mid-frame.
-	_, err := osc52.New(rep).Mode(osc52Mode()).WriteTo(os.Stderr)
+	_, err := os.Stderr.WriteString(osc52Sequence(rep))
 	return err
 }
 
-func osc52Mode() osc52.Mode {
-	switch {
-	case os.Getenv("TMUX") != "":
-		return osc52.TmuxMode
-	default:
-		return osc52.DefaultMode
+func osc52Sequence(rep string) string {
+	seq := "\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte(rep)) + "\a"
+	if os.Getenv("TMUX") != "" {
+		return "\x1bPtmux;\x1b" + seq + "\x1b\\"
 	}
+	return seq
 }
 
 // report renders the finished run as plain text safe to paste into a ticket

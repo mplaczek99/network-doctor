@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aymanbagabas/go-osc52/v2"
 	"github.com/heymaikol/network-doctor/internal/diagnostic"
 )
 
@@ -74,20 +73,20 @@ func TestExportReportSavePath(t *testing.T) {
 	}
 }
 
-func TestOSC52Mode(t *testing.T) {
+func TestOSC52Sequence(t *testing.T) {
 	tests := []struct {
 		name string
 		tmux string
-		want osc52.Mode
+		want string
 	}{
-		{name: "terminal", want: osc52.DefaultMode},
-		{name: "tmux", tmux: "tmux", want: osc52.TmuxMode},
+		{name: "terminal", want: "\x1b]52;c;aGVsbG8=\a"},
+		{name: "tmux", tmux: "tmux", want: "\x1bPtmux;\x1b\x1b]52;c;aGVsbG8=\a\x1b\\"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("TMUX", tt.tmux)
-			if got := osc52Mode(); got != tt.want {
-				t.Errorf("osc52Mode() = %v, want %v", got, tt.want)
+			if got := osc52Sequence("hello"); got != tt.want {
+				t.Errorf("osc52Sequence() = %q, want %q", got, tt.want)
 			}
 		})
 	}
