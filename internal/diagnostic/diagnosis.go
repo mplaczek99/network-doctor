@@ -19,6 +19,10 @@ func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 	fail := func(id ProbeID) bool { return res[id].Status == StatusFail }
 	warn := func(id ProbeID) bool { return res[id].Status == StatusWarn }
 	has := func(id ProbeID) bool { _, ok := res[id]; return ok }
+	directOK := func() bool {
+		r := res[ProbeInternet]
+		return r.Status == StatusPass || r.Status == StatusWarn && !r.downgraded
+	}
 
 	if fail(ProbeIface) {
 		return "No usable network interface — the link is down."
@@ -34,7 +38,7 @@ func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 			return "Online directly — but the configured environment proxy is unreachable, so apps that honor HTTP(S)_PROXY will fail."
 		case ip && dn:
 			return "Online — direct TCP egress and DNS both work."
-		case warn(ProbeInternet) && dn && prx:
+		case warn(ProbeInternet) && res[ProbeInternet].downgraded && dn && prx:
 			return "Online via the environment proxy — direct egress is blocked (proxy-only network)."
 		case warn(ProbeInternet) && dn:
 			return "Online but degraded — direct egress is impaired (see the ! row for details)."
@@ -54,12 +58,12 @@ func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 	switch {
 	case fail(ProbeDNS):
 		v := "Cannot resolve " + host + " — DNS failure."
-		if pass(ProbeInternet) {
+		if directOK() {
 			v += " (The general internet is reachable.)"
 		}
 		return v
 	case fail(ProbeTargetTCP):
-		if pass(ProbeInternet) {
+		if directOK() {
 			return hp + " is unreachable though DNS and the general internet work — remote port closed, firewall, or VPN routing."
 		}
 		if prx {
@@ -79,15 +83,12 @@ func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 		return hp + " accepts TCP but the service banner check failed."
 	case (has(ProbeSSH) && warn(ProbeSSH)) || (has(ProbeSMTP) && warn(ProbeSMTP)):
 		return hp + " accepts TCP but sent no service banner."
-	case fail(ProbeInternet):
+	case fail(ProbeInternet) || (warn(ProbeInternet) && res[ProbeInternet].downgraded):
 		return "The target works but direct internet egress is blocked (proxy-only or filtered network?)."
-	case warn(ProbeInternet):
-		if prx {
-			return "The target works and so does the environment proxy, but direct internet egress is blocked (proxy-only network)."
-		}
-		return "The target works but direct internet egress is impaired (proxy-only or filtered network?)."
-	case prxDown && pass(ProbeInternet):
+	case prxDown && directOK():
 		return "The target and direct egress work, but the configured environment proxy is unreachable — apps that honor HTTP(S)_PROXY will fail."
+	case warn(ProbeInternet):
+		return "The target works but direct internet egress is degraded (see the ! row for details)."
 	default:
 		return "All checks passed — " + hp + " looks healthy."
 	}
@@ -114,6 +115,7 @@ func DowngradeEgress(res map[ProbeID]ProbeResult) {
 		return
 	}
 	r.Status = StatusWarn
+	r.downgraded = true
 	if otherOK {
 		r.Detail += " — but another path works"
 	} else {

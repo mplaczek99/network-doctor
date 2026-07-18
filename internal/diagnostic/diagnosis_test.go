@@ -39,18 +39,19 @@ func TestDiagnoseProxy(t *testing.T) {
 	cases := []struct {
 		name                 string
 		internet, proxy, dns Status
+		downgraded           bool
 		want                 string
 	}{
-		// internet is Warn, not Fail: DowngradeEgress has already run.
-		{"proxy-only network", StatusWarn, StatusPass, StatusPass, "Online via the environment proxy"},
-		{"proxy dead, direct fine", StatusPass, StatusFail, StatusPass, "proxy is unreachable"},
-		{"no proxy configured", StatusPass, StatusNA, StatusPass, "Online — direct TCP egress"},
+		{"proxy-only network", StatusWarn, StatusPass, StatusPass, true, "Online via the environment proxy"},
+		{"degraded direct with proxy", StatusWarn, StatusPass, StatusPass, false, "Online but degraded"},
+		{"proxy dead, direct fine", StatusPass, StatusFail, StatusPass, false, "proxy is unreachable"},
+		{"no proxy configured", StatusPass, StatusNA, StatusPass, false, "Online — direct TCP egress"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			res := map[ProbeID]ProbeResult{
 				ProbeIface:    {Status: StatusPass},
-				ProbeInternet: {Status: c.internet},
+				ProbeInternet: {Status: c.internet, downgraded: c.downgraded},
 				ProbeProxy:    {Status: c.proxy},
 				ProbeDNS:      {Status: c.dns},
 			}
@@ -69,8 +70,14 @@ func TestDiagnoseTargetProxyOnly(t *testing.T) {
 		ProbeProxy: {Status: StatusPass}, ProbeDNS: {Status: StatusPass},
 		ProbeTargetTCP: {Status: StatusFail},
 	}
+	DowngradeEgress(res)
 	if v := Diagnose(tg, order, res); !strings.Contains(v, "proxy-only network") {
 		t.Errorf("got %q, want a proxy-only verdict", v)
+	}
+	res[ProbeInternet] = ProbeResult{Status: StatusWarn}
+	res[ProbeTargetTCP] = ProbeResult{Status: StatusPass}
+	if v := Diagnose(tg, order, res); !strings.Contains(v, "direct internet egress is degraded") {
+		t.Errorf("got %q, want a degraded direct-egress verdict", v)
 	}
 }
 

@@ -12,6 +12,7 @@ var targetOrder = []ProbeID{ProbeIface, ProbeInternet, ProbeDNS, ProbeTargetTCP,
 func TestDiagnoseTargetBranches(t *testing.T) {
 	tg := mustTarget(t, "github.com")
 	pass := ProbeResult{Status: StatusPass}
+	warn := ProbeResult{Status: StatusWarn}
 	skip := ProbeResult{Status: StatusSkip}
 	fail := ProbeResult{Status: StatusFail}
 
@@ -37,9 +38,25 @@ func TestDiagnoseTargetBranches(t *testing.T) {
 			want: "general internet is reachable",
 		},
 		{
+			name: "dns fails but general internet is degraded",
+			res: map[ProbeID]ProbeResult{
+				ProbeIface: pass, ProbeInternet: warn, ProbeDNS: fail,
+				ProbeTargetTCP: skip, ProbeTLS: skip, ProbeHTTP: skip, ProbeHTTPS: skip,
+			},
+			want: "general internet is reachable",
+		},
+		{
 			name: "target unreachable but internet up",
 			res: map[ProbeID]ProbeResult{
 				ProbeIface: pass, ProbeInternet: pass, ProbeDNS: pass,
+				ProbeTargetTCP: fail, ProbeTLS: skip, ProbeHTTP: pass, ProbeHTTPS: skip,
+			},
+			want: "unreachable though DNS and the general internet work",
+		},
+		{
+			name: "target unreachable but internet is degraded",
+			res: map[ProbeID]ProbeResult{
+				ProbeIface: pass, ProbeInternet: warn, ProbeDNS: pass,
 				ProbeTargetTCP: fail, ProbeTLS: skip, ProbeHTTP: pass, ProbeHTTPS: skip,
 			},
 			want: "unreachable though DNS and the general internet work",

@@ -73,6 +73,7 @@ const (
 type ProbeResult struct {
 	ID         ProbeID
 	Status     Status
+	downgraded bool     // DowngradeEgress rewrote a direct-egress failure to Warn.
 	Addrs      []net.IP // DNS publishes all A records here
 	SelectedIP net.IP   // winning/pinned IP used by this probe
 	Source     net.IP
