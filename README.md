@@ -85,7 +85,7 @@ IP literal). A Warn never counts as a failure.
 | **TLS** | The TLS handshake (SNI + cert verification) succeeds | bad/expired cert, clock skew, or MITM → Fail |
 | **HTTP** | Port 80 returns any HTTP response (incl. 3xx/4xx/5xx) | Independent HEAD after DNS, redirects off, proxy off |
 | **HTTPS** | The selected TLS port returns any HTTP response | HEAD against the TLS-validated IP, redirects off, proxy off |
-| **SSH/SMTP banner** | TCP connects (banner read best-effort) | bounded read; "connected but silent" still passes |
+| **SSH/SMTP banner** | TCP connects (banner read best-effort) | bounded read; connected but silent → Warn (not a failure) |
 
 RTT is measured from the TCP-connect handshake (no ICMP, no root). The source IP
 and interface are read from the winning connection's `LocalAddr`, with a
