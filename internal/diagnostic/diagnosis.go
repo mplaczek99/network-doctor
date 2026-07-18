@@ -79,6 +79,8 @@ func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 		return hp + " accepts TCP but the service banner check failed."
 	case (has(ProbeSSH) && warn(ProbeSSH)) || (has(ProbeSMTP) && warn(ProbeSMTP)):
 		return hp + " accepts TCP but sent no service banner."
+	case fail(ProbeInternet):
+		return "The target works but direct internet egress is blocked (proxy-only or filtered network?)."
 	case warn(ProbeInternet):
 		if prx {
 			return "The target works and so does the environment proxy, but direct internet egress is blocked (proxy-only network)."
@@ -106,12 +108,13 @@ func DowngradeEgress(res map[ProbeID]ProbeResult) {
 		other = res[ProbeDNS]
 	}
 	prx, hasProxy := res[ProbeProxy]
+	otherOK := other.Status == StatusPass || other.Status == StatusWarn
 	proxyOK := hasProxy && prx.Status == StatusPass
-	if other.Status != StatusPass && !proxyOK {
+	if !otherOK && !proxyOK {
 		return
 	}
 	r.Status = StatusWarn
-	if other.Status == StatusPass {
+	if otherOK {
 		r.Detail += " — but another path works"
 	} else {
 		r.Detail += " — but the environment proxy works"

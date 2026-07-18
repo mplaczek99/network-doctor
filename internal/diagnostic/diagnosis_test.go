@@ -103,4 +103,10 @@ func TestDiagnoseTarget(t *testing.T) {
 	if v := Diagnose(tg, order, res); !strings.Contains(v, "github.com:443 looks healthy") {
 		t.Errorf("got %q, want target healthy verdict", v)
 	}
+
+	// A raw egress failure must never fall through to the all-clear verdict.
+	res[ProbeInternet] = ProbeResult{Status: StatusFail}
+	if v := Diagnose(tg, order, res); !strings.Contains(v, "direct internet egress is blocked") {
+		t.Errorf("got %q, want blocked-egress verdict", v)
+	}
 }

@@ -303,6 +303,9 @@ func TestDowngradeEgress(t *testing.T) {
 		{"target tcp works", map[ProbeID]ProbeResult{
 			ProbeInternet: {Status: StatusFail}, ProbeDNS: {Status: StatusPass}, ProbeTargetTCP: {Status: StatusPass},
 		}, StatusWarn},
+		{"target tcp works with warnings", map[ProbeID]ProbeResult{
+			ProbeInternet: {Status: StatusFail}, ProbeDNS: {Status: StatusPass}, ProbeTargetTCP: {Status: StatusWarn},
+		}, StatusWarn},
 		{"target tcp fails, dns pass not enough", map[ProbeID]ProbeResult{
 			ProbeInternet: {Status: StatusFail}, ProbeDNS: {Status: StatusPass}, ProbeTargetTCP: {Status: StatusFail},
 		}, StatusFail},
