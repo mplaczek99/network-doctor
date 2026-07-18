@@ -5,42 +5,6 @@ connection breaks** in plain English — not just a wall of tool output.
 
 ![Network Doctor diagnosing github.com:443](assets/demo.gif)
 
-```sh
-yay -S network-doctor                                  # Arch Linux (AUR)
-brew install --cask heymaikol/tap/network-doctor       # macOS (Homebrew)
-go install github.com/heymaikol/network-doctor@latest  # anywhere with Go 1.26+
-```
-
-More options (prebuilt binaries, Windows) under [Install](#install).
-
-The home screen runs short, native, rootless probes as a small dependency graph,
-then a diagnosis engine turns their combined state into a plain-English verdict
-banner — on a failure it also shows the fix and suggests which drill-down tool
-to press next. Below it, the left pane is the probe chain and the right pane is
-detail for the selected probe.
-
-```
-Network Doctor  github.com:443  ·  Wi-Fi: HomeNet
-
-✗ Cannot resolve github.com — DNS failure. (The general internet is reachable.)
-  Fix: check /etc/resolv.conf / DNS
-  Next: press d — DNS lookup (dig)
-
-Checks                        Details — DNS github.com
-✓ › Interface                 FAIL — no A records
-✓   Internet (TCP egress)
-–   Internet (env proxy)
-✗   DNS github.com
-⊘   TCP github.com:443
-⊘   TLS github.com
-⊘   HTTP github.com
-⊘   HTTPS github.com
-
-Dig deeper: [i] route table · [s] open sockets · [p] ping the host · [d] DNS lookup · …
-
-↑/↓ pick a check · r restart · q quit
-```
-
 ## How it diagnoses
 
 Probes form a **dependency graph with independent branches**, so an unrelated
