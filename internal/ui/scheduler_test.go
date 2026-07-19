@@ -1,3 +1,6 @@
+// TUI probe scheduling: sibling independence, skip propagation, and
+// end-of-run bookkeeping.
+
 package ui
 
 import (

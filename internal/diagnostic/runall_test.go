@@ -1,3 +1,6 @@
+// Headless RunAll: DAG completion with the skip cascade, and the egress
+// downgrade applied at the end.
+
 package diagnostic
 
 import (

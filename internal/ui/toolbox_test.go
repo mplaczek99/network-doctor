@@ -1,3 +1,5 @@
+// Toolbox mode: tool sets, hotkey uniqueness, and the exit code.
+
 package ui
 
 import (

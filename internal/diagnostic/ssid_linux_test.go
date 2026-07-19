@@ -1,5 +1,7 @@
 //go:build linux
 
+// parseESSID length handling, including out-of-range values.
+
 package diagnostic
 
 import (

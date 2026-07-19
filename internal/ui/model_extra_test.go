@@ -1,3 +1,6 @@
+// Update-loop odds and ends: the output ring buffer, tool builders, actions
+// deferred behind a live job, stale-message drops, and view rendering.
+
 package ui
 
 import (

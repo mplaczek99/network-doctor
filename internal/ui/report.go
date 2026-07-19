@@ -18,6 +18,8 @@ import (
 // plus whether the export succeeded.
 func exportReport(rep string, save bool) (notice string, ok bool) {
 	if save {
+		// cwd first (where the user is looking), $HOME as fallback — the cwd
+		// may be read-only when launched from an installed location.
 		name := fmt.Sprintf("network-doctor-%s.txt", time.Now().Format("20060102-150405"))
 		path, err := filepath.Abs(name)
 		if err == nil {
@@ -60,6 +62,9 @@ func copyReport(rep string) error {
 	return err
 }
 
+// osc52Sequence encodes rep as an OSC 52 clipboard escape, the "please copy
+// this" request terminals honor even over SSH. Inside tmux the sequence must
+// ride tmux's DCS passthrough envelope, or tmux quietly eats it.
 func osc52Sequence(rep string) string {
 	seq := "\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte(rep)) + "\a"
 	if os.Getenv("TMUX") != "" {

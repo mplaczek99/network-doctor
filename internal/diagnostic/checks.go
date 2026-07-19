@@ -245,6 +245,8 @@ func (o *netops) internetProbe(ctx context.Context, _ map[ProbeID]ProbeResult) P
 	}()
 	wg.Wait()
 
+	// IPv4 headlines the result unless it lost and IPv6 won — not a value
+	// judgment, just a stable order for the Detail string and warnings.
 	prim, sec, primName, secName := v4, v6, "IPv4", "IPv6"
 	if v4.conn == nil && v6.conn != nil {
 		prim, sec, primName, secName = v6, v4, "IPv6", "IPv4"
@@ -286,6 +288,9 @@ func (o *netops) proxyProbe(ctx context.Context, _ map[ProbeID]ProbeResult) Prob
 	var r ProbeResult
 	var proxyURL *url.URL
 	var err error
+	// ProxyFromEnvironment answers per request scheme (HTTPS_PROXY vs
+	// HTTP_PROXY), so ask for both; https first since that's what almost all
+	// tunneled traffic is.
 	for _, scheme := range []string{"https", "http"} {
 		proxyURL, err = o.proxyFromEnv(&http.Request{URL: &url.URL{Scheme: scheme, Host: probeHost}})
 		if err != nil || proxyURL != nil {
@@ -689,6 +694,9 @@ func (o *netops) dialIPs(ctx context.Context, ips []net.IP, port int) (net.Conn,
 		}
 	}()
 
+	// Every address either wins, fails, or never starts; pending bounds the
+	// loop either way. On a win we return at once — the deferred cancel tells
+	// stragglers still dialing to give up and close whatever they got.
 	var attempts []Attempt
 	for pending := len(ips); pending > 0; pending-- {
 		select {

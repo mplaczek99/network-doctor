@@ -1,3 +1,6 @@
+// Parsers for the networksetup (macOS) and netsh (Windows) SSID output
+// formats — runnable from any OS.
+
 package diagnostic
 
 import "testing"

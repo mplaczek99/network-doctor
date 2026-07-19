@@ -1,3 +1,7 @@
+// Job lifecycle against GO_HELPER subprocesses: streaming, process-group
+// cancellation, timeouts, line truncation, and overflow still delivering the
+// terminal event.
+
 package ui
 
 import (

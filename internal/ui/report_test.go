@@ -1,3 +1,6 @@
+// Report rendering and export: sanitization, IPv6 bracketing, clipboard and
+// OSC 52 paths, and save fallbacks.
+
 package ui
 
 import (

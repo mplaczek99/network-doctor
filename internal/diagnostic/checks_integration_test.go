@@ -1,5 +1,7 @@
 //go:build integration
 
+// Opt-in (-tags integration) tests that dial real loopback sockets.
+
 package diagnostic
 
 // Real-socket tests, kept out of the unit suite. Run with:

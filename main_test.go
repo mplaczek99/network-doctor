@@ -1,3 +1,6 @@
+// CLI surface: flag parsing and re-parsing, usage text, the version fallback,
+// and the JSON report builder.
+
 package main
 
 import (

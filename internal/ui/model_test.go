@@ -1,3 +1,6 @@
+// Key handling and view behavior: restart, quit, the confirm gate, the output
+// viewer, notices, and terminal-height clamping.
+
 package ui
 
 import (

@@ -1,3 +1,5 @@
+// ExitCode and Init across toolbox and normal modes.
+
 package ui
 
 import (

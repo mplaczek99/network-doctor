@@ -113,6 +113,8 @@ func ParseTarget(raw string) (*Target, error) {
 	case strings.Count(s, ":") > 1:
 		// Bare IPv6 literal — any port form must use brackets.
 	default:
+		// LastIndex, though with ≤1 colon it can only be the port separator;
+		// bare-v6 (2+ colons) was already peeled off above.
 		if i := strings.LastIndex(s, ":"); i >= 0 {
 			host = s[:i]
 			port, err := parsePort(s[i+1:])

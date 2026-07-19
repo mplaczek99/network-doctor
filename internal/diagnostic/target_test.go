@@ -1,3 +1,5 @@
+// ParseTarget grammar: the accepted forms and the rejects.
+
 package diagnostic
 
 import "testing"

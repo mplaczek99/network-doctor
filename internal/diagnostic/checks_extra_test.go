@@ -1,3 +1,6 @@
+// Stub-network tests for probe plumbing: dialIPs, path identity, dial
+// warnings, proxy CONNECT handling, and the egress downgrade.
+
 package diagnostic
 
 import (

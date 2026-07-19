@@ -1,3 +1,6 @@
+// Probe behavior against local listeners and stubs: Happy Eyeballs stagger and
+// cancellation, DNS/TLS/banner failure paths, and the HTTP header cap.
+
 package diagnostic
 
 import (

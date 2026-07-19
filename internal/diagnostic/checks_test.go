@@ -1,3 +1,5 @@
+// Shape checks for the probe DAG that BuildProbes returns per protocol.
+
 package diagnostic
 
 import "testing"

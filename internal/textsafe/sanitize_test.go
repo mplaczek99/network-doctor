@@ -1,3 +1,5 @@
+// The Clean contract, plus FuzzSanitize — the fuzz entry CI smokes.
+
 package textsafe
 
 import (

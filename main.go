@@ -24,6 +24,9 @@ func init() {
 	}
 }
 
+// versionString picks what -version reports: the GoReleaser-injected value
+// when there is one, else the module version stamped into the binary — so a
+// plain `go install ...@vX.Y.Z` build doesn't introduce itself as "dev".
 func versionString(injected, module string) string {
 	if injected == "dev" && module != "" && module != "(devel)" {
 		return module
@@ -157,6 +160,8 @@ type reportAttempt struct {
 	Err string `json:"error,omitempty"`
 }
 
+// runJSON runs the probe DAG headless and prints the JSON report. Exit code
+// mirrors the TUI contract: 1 if any check failed, else 0.
 func runJSON(t *diagnostic.Target, stdout, stderr io.Writer) int {
 	probes := diagnostic.BuildProbes(t)
 	results := diagnostic.RunAll(context.Background(), probes)
@@ -173,6 +178,9 @@ func runJSON(t *diagnostic.Target, stdout, stderr io.Writer) int {
 	return 1
 }
 
+// buildReport flattens probe results into the stable JSON shape, preserving
+// probe order. OK means "no check failed" — Warn, Skip, and N/A don't count
+// against it, same as everywhere else in the app.
 func buildReport(t *diagnostic.Target, probes []diagnostic.Probe, results map[diagnostic.ProbeID]diagnostic.ProbeResult) report {
 	rep := report{Version: version, OK: true}
 	if t != nil {

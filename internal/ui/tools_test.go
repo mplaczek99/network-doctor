@@ -1,3 +1,6 @@
+// Tool tables per GOOS: definitions, the protocol-matched c slot, display
+// quoting, and availability caching.
+
 package ui
 
 import (

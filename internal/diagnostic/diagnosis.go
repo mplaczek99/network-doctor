@@ -19,6 +19,9 @@ func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 	fail := func(id ProbeID) bool { return res[id].Status == StatusFail }
 	warn := func(id ProbeID) bool { return res[id].Status == StatusWarn }
 	has := func(id ProbeID) bool { _, ok := res[id]; return ok }
+	// directOK means direct egress genuinely worked: a Pass, or a Warn the
+	// probe produced itself. A Warn planted by DowngradeEgress doesn't count —
+	// that's a Fail wearing a nicer hat.
 	directOK := func() bool {
 		r := res[ProbeInternet]
 		return r.Status == StatusPass || r.Status == StatusWarn && !r.downgraded
@@ -31,6 +34,9 @@ func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 	prx := has(ProbeProxy) && pass(ProbeProxy)
 	prxDown := has(ProbeProxy) && fail(ProbeProxy)
 
+	// Generic mode (no target): the verdict is a truth table over egress, DNS,
+	// and proxy state. Cases are ordered most-specific first because several
+	// overlap — reordering them changes answers, so don't.
 	if t == nil {
 		ip, dn := pass(ProbeInternet), pass(ProbeDNS)
 		switch {
@@ -55,6 +61,10 @@ func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 
 	host := t.Host
 	hp := net.JoinHostPort(host, strconv.Itoa(t.Port)) // brackets IPv6 literals
+
+	// Targeted mode: walk up the protocol stack (DNS → TCP → TLS → HTTP →
+	// banner) and report the first rung that broke — everything above it
+	// failing is implied, everything below it passing is context.
 	switch {
 	case fail(ProbeDNS):
 		v := "Cannot resolve " + host + " — DNS failure."

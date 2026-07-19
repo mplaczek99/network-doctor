@@ -182,6 +182,9 @@ func (m model) spinnerActive() bool {
 	return ((!m.toolbox || m.generation > 0 || m.chainRan()) && !m.allDone()) || m.activeJob != nil
 }
 
+// setNotice shows one-line feedback and schedules its expiry. The expiry tick
+// carries the deadline it was armed with, so a leftover tick from an earlier
+// notice can't blank a newer one — equality is the identity check.
 func (m *model) setNotice(msg string, ok bool) tea.Cmd {
 	window := noticeWindow
 	if msg == ctrlCNotice {
@@ -193,6 +196,10 @@ func (m *model) setNotice(msg string, ok bool) tea.Cmd {
 	return tea.Tick(window, func(time.Time) tea.Msg { return noticeDoneMsg{deadline: deadline} })
 }
 
+// Update is the only goroutine that touches model state; probes and jobs talk
+// to it strictly through messages. Async messages carry the generation they
+// were born in, so a restart doesn't have to chase them down — it just bumps
+// the counter and lets the stale ones bounce off.
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
@@ -204,6 +211,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Ctrl+C while the confirm gate is up cancels the gate, not the app.
 		if msg.Type == tea.KeyCtrlC && m.confirmTool != nil {
 			return m.handleConfirmKey(msg)
 		}
@@ -320,6 +328,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
+		// Bubble Tea spinners run on a self-perpetuating tick: each TickMsg
+		// schedules the next. Returning nil here ends the chain when nothing
+		// is animating; launchTool/doRestart re-seed it (wasTicking) later.
 		if !m.spinnerActive() {
 			return m, nil
 		}

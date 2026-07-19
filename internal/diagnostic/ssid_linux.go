@@ -24,7 +24,10 @@ type iwreq struct {
 	pointer *byte
 	length  uint16
 	flags   uint16
-	_       [12 - unsafe.Sizeof(uintptr(0))]byte
+	// The kernel struct is 32 bytes on every arch; the pointer above is 4 or
+	// 8, so the tail padding shrinks as the pointer grows. Letting the
+	// compiler do the arithmetic beats two build-tagged copies of this file.
+	_ [12 - unsafe.Sizeof(uintptr(0))]byte
 }
 
 // ssid returns the Wi-Fi network name for iface, or "" if it isn't wireless,

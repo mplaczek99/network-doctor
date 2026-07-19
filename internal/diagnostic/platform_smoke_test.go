@@ -1,3 +1,6 @@
+// Cross-GOOS smoke: ssid runs without incident on the host OS and every GOOS
+// has fix hints.
+
 package diagnostic
 
 import (

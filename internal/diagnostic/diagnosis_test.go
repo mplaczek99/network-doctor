@@ -1,3 +1,6 @@
+// Table tests for Diagnose verdicts: generic and targeted runs, proxy-only
+// networks, and the in-progress placeholder.
+
 package diagnostic
 
 import (

@@ -1,3 +1,6 @@
+// Diagnose branches the main tables miss: targeted failure rungs, banner
+// failures, and generic egress without DNS.
+
 package diagnostic
 
 import (
