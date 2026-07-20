@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -129,6 +130,7 @@ type netops struct {
 	lookupIP       func(ctx context.Context, host string) ([]net.IP, error)
 	dialContext    func(ctx context.Context, network, addr string) (net.Conn, error)
 	dialTLS        func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error)
+	tlsRootCAs     *x509.CertPool
 	ssid           func(ctx context.Context, iface string) string
 	proxyFromEnv   func(*http.Request) (*url.URL, error)
 }
@@ -471,7 +473,8 @@ func (o *netops) httpProbe(host string, port int, scheme string, addressDep Prob
 		var dialIP net.IP
 		var dialAttempts []Attempt
 		tr := &http.Transport{
-			Proxy: nil,
+			Proxy:             nil,
+			ForceAttemptHTTP2: true,
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				conn, selected, attempts, _ := o.dialIPs(ctx, addrs, port)
 				dialMu.Lock()
@@ -485,7 +488,7 @@ func (o *netops) httpProbe(host string, port int, scheme string, addressDep Prob
 				}
 				return conn, nil
 			},
-			TLSClientConfig:        &tls.Config{ServerName: host},
+			TLSClientConfig:        &tls.Config{ServerName: host, RootCAs: o.tlsRootCAs},
 			MaxResponseHeaderBytes: 64 << 10,
 			DisableKeepAlives:      true,
 		}

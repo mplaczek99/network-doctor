@@ -7,10 +7,14 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -258,5 +262,31 @@ func TestHTTPProbeHeaderLimit(t *testing.T) {
 	r := ops.httpProbe("example.com", 80, "http", ProbeTargetTCP)(ctx, deps)
 	if r.Status != StatusFail || !strings.Contains(r.Detail, "no HTTP response") || !strings.Contains(r.Detail, "exceeded") {
 		t.Errorf("oversized headers = %+v, want FAIL mentioning the exceeded header limit", r)
+	}
+}
+
+func TestHTTPSProbeSupportsHTTP2OnlyServer(t *testing.T) {
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor != 2 {
+			conn, _, _ := w.(http.Hijacker).Hijack()
+			_ = conn.Close()
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	t.Cleanup(server.Close)
+
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
+
+	host, portText, _ := net.SplitHostPort(server.Listener.Addr().String())
+	port, _ := strconv.Atoi(portText)
+	ops := &netops{dialContext: new(net.Dialer).DialContext, tlsRootCAs: roots}
+	deps := map[ProbeID]ProbeResult{ProbeTLS: {SelectedIP: net.ParseIP(host)}}
+	r := ops.httpProbe(host, port, "https", ProbeTLS)(context.Background(), deps)
+	if r.Status != StatusPass {
+		t.Fatalf("HTTP/2-only HTTPS probe = %+v, want PASS", r)
 	}
 }
