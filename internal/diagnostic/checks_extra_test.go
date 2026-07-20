@@ -264,6 +264,21 @@ func TestProxyProbeUnreachable(t *testing.T) {
 	}
 }
 
+func TestProxyProbeMalformedURLFailsWithoutDial(t *testing.T) {
+	for _, proxy := range []string{"://bad", "http://:3128", "http://proxy:", "http://proxy:0", "http://proxy:65536", "https://proxy:65536"} {
+		t.Run(proxy, func(t *testing.T) {
+			ops := proxyOps(proxy, func(context.Context, string, string) (net.Conn, error) {
+				t.Fatal("malformed proxy must not be dialed")
+				return nil, nil
+			})
+			r := ops.proxyProbe(context.Background(), nil)
+			if r.Status != StatusFail || !strings.Contains(r.Detail, "bad proxy configuration") {
+				t.Errorf("malformed proxy = %+v, want FAIL bad proxy configuration", r)
+			}
+		})
+	}
+}
+
 func TestProxyProbeConnectOK(t *testing.T) {
 	ops := proxyOps("http://proxy.corp:3128", func(context.Context, string, string) (net.Conn, error) {
 		return &scriptConn{r: strings.NewReader("HTTP/1.1 200 Connection established\r\n\r\n")}, nil

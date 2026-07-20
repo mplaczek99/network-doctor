@@ -47,7 +47,7 @@ func TestDiagnoseProxy(t *testing.T) {
 	}{
 		{"proxy-only network", StatusWarn, StatusPass, StatusPass, true, "Online via the environment proxy"},
 		{"degraded direct with proxy", StatusWarn, StatusPass, StatusPass, false, "Online but degraded"},
-		{"proxy dead, direct fine", StatusPass, StatusFail, StatusPass, false, "proxy is unreachable"},
+		{"proxy failed, direct fine", StatusPass, StatusFail, StatusPass, false, "proxy check failed"},
 		{"no proxy configured", StatusPass, StatusNA, StatusPass, false, "Online — direct TCP egress"},
 	}
 	for _, c := range cases {

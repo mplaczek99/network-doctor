@@ -41,7 +41,7 @@ func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 		ip, dn := pass(ProbeInternet), pass(ProbeDNS)
 		switch {
 		case ip && dn && prxDown:
-			return "Online directly — but the configured environment proxy is unreachable, so apps that honor HTTP(S)_PROXY will fail."
+			return "Online directly — but the configured environment proxy check failed, so apps that honor HTTP(S)_PROXY will fail (see the proxy row)."
 		case ip && dn:
 			return "Online — direct TCP egress and DNS both work."
 		case warn(ProbeInternet) && res[ProbeInternet].downgraded && dn && prx:
@@ -96,7 +96,7 @@ func Diagnose(t *Target, order []ProbeID, res map[ProbeID]ProbeResult) string {
 	case fail(ProbeInternet) || (warn(ProbeInternet) && res[ProbeInternet].downgraded):
 		return "The target works but direct internet egress is blocked (proxy-only or filtered network?)."
 	case prxDown && directOK():
-		return "The target and direct egress work, but the configured environment proxy is unreachable — apps that honor HTTP(S)_PROXY will fail."
+		return "The target and direct egress work, but the configured environment proxy check failed — apps that honor HTTP(S)_PROXY will fail (see the proxy row)."
 	case warn(ProbeInternet):
 		return "The target works but direct internet egress is degraded (see the ! row for details)."
 	default:

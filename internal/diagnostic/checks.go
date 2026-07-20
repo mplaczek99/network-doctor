@@ -310,10 +310,24 @@ func (o *netops) proxyProbe(ctx context.Context, _ map[ProbeID]ProbeResult) Prob
 		r.Detail = "no proxy in environment (HTTPS_PROXY/HTTP_PROXY unset)"
 		return r
 	}
+	if proxyURL.Hostname() == "" {
+		r.Status = StatusFail
+		r.Detail = "bad proxy configuration: proxy URL has no host"
+		r.Fix = "fix the HTTPS_PROXY/HTTP_PROXY value"
+		return r
+	}
 	if proxyURL.Scheme != "http" && proxyURL.Scheme != "https" {
 		r.Status = StatusNA
 		r.Detail = "proxy scheme " + textsafe.Clean(proxyURL.Scheme) + " is not supported by this probe"
 		return r
+	}
+	if port := proxyURL.Port(); strings.HasSuffix(proxyURL.Host, ":") || port != "" {
+		if _, err := parsePort(port); err != nil {
+			r.Status = StatusFail
+			r.Detail = "bad proxy configuration: " + textsafe.Clean(err.Error())
+			r.Fix = "fix the HTTPS_PROXY/HTTP_PROXY value"
+			return r
+		}
 	}
 	addr := proxyURL.Host
 	if proxyURL.Port() == "" {
