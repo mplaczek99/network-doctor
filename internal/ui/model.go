@@ -384,8 +384,12 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.setNotice("network discovery needs nmap", false)
 		}
 		m.networkCIDR = cidr
-		m.confirmTool = &tool
-		return m, nil
+		if m.activeJob != nil {
+			m.activeJob.cancel()
+			m.pending = &pendingAction{kind: pendTool, tool: tool}
+			return m, nil
+		}
+		return m, m.launchTool(tool)
 	case "up", "k":
 		if m.selected > 0 {
 			m.selected--
@@ -911,10 +915,10 @@ func (m model) bodyView(deferred bool) string {
 		panelStyle.Width(rightW).Height(h).Render(rightStr))
 }
 
-// networkMapView renders hosts found by the LAN discovery job.
+// networkMapView renders hosts found by the LAN scan.
 func (m model) networkMapView() string {
 	var b strings.Builder
-	b.WriteString(panelTitleStyle.Render("Network map — "+m.networkCIDR) + "\n")
+	b.WriteString(panelTitleStyle.Render("Network map — "+lanDiscoveryName+" — "+m.networkCIDR) + "\n")
 	source, _ := m.discoveryNetwork()
 	b.WriteString(selStyle.Render("◆") + " This device")
 	if source != nil {
@@ -1045,7 +1049,7 @@ func (m model) helpView(deferred bool) string {
 	// as jobView), so the hint tracks exactly when the key does something.
 	hasJob := m.activeJob != nil || m.jobStatus != JobQueued
 	if deferred {
-		view := "discover devices"
+		view := "network map"
 		if m.networkMap {
 			view = "checks"
 		}
@@ -1058,10 +1062,7 @@ func (m model) helpView(deferred bool) string {
 		}
 		return helpKeys(m.width, append(kv, "q", "quit")...)
 	}
-	view := "discover devices"
-	if m.jobName == lanDiscoveryName {
-		view = "network map"
-	}
+	view := "network map"
 	kv := []string{"↑/↓", "scroll", "v", view}
 	if m.networkMap {
 		kv = []string{"v", "checks"}

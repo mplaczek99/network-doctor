@@ -65,24 +65,25 @@ func TestNetworkMapToggle(t *testing.T) {
 	}
 	r.Source = net.ParseIP("192.168.12.34")
 	m.results[diagnostic.ProbeInternet] = r
-
-	u, _ := m.Update(keyMsg("v"))
-	nm := asModel(t, u)
-	if nm.confirmTool == nil || nm.networkCIDR != "192.168.12.0/24" || !strings.Contains(nm.View(), "nmap --unprivileged") {
-		t.Fatalf("v must confirm discovery on the local /24:\n%s", nm.View())
+	if help := m.helpView(false); !strings.Contains(help, "network map") {
+		t.Fatalf("v hint must say network map: %s", help)
 	}
 
-	nm.confirmTool = nil
+	u, cmd := m.Update(keyMsg("v"))
+	nm := asModel(t, u)
+	if cmd == nil || nm.confirmTool != nil || nm.activeJob == nil || !nm.networkMap || nm.networkCIDR != "192.168.12.0/24" || !strings.Contains(nm.View(), "LAN scan") {
+		t.Fatalf("v must immediately run the LAN scan on the local /24:\n%s", nm.View())
+	}
+
+	nm.activeJob = nil
 	nm.jobName, nm.jobStatus = lanDiscoveryName, JobDone
 	nm.jobLines = []string{
 		"Host: 192.168.12.1 (router.local)\tStatus: Up",
 		"Host: 192.168.12.50 (living-room-tv.local)\tStatus: Up",
 	}
-	u, _ = nm.Update(keyMsg("v"))
-	nm = asModel(t, u)
 	view := nm.View()
 	if !nm.networkMap || !strings.Contains(view, "router.local") || !strings.Contains(view, "living-room-tv.local") || strings.Contains(view, "Host:") {
-		t.Fatalf("v must render discovered LAN devices:\n%s", view)
+		t.Fatalf("LAN scan must render discovered devices in the network map:\n%s", view)
 	}
 
 	u, _ = nm.Update(keyMsg("v"))
