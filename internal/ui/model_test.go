@@ -69,9 +69,9 @@ func TestNetworkMapToggle(t *testing.T) {
 		t.Fatalf("v hint must say network map: %s", help)
 	}
 
-	u, cmd := m.Update(keyMsg("v"))
+	u, _ := m.Update(keyMsg("v"))
 	nm := asModel(t, u)
-	if cmd == nil || nm.confirmTool != nil || nm.activeJob == nil || !nm.networkMap || nm.networkCIDR != "192.168.12.0/24" || !strings.Contains(nm.View(), "LAN scan") {
+	if nm.confirmTool != nil || nm.jobName != lanDiscoveryName || nm.jobStatus == JobQueued || !nm.networkMap || nm.networkCIDR != "192.168.12.0/24" || !strings.Contains(nm.View(), "LAN scan") {
 		t.Fatalf("v must immediately run the LAN scan on the local /24:\n%s", nm.View())
 	}
 
