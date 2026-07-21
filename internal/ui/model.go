@@ -48,6 +48,8 @@ type pendingAction struct {
 	target *diagnostic.Target
 }
 
+// ponytail: the selected job stays in model's legacy fields to contain this
+// change; move every run into []jobState when job controls grow.
 // jobState is one tool run's process and display state. The model's existing
 // job fields are the selected run; unselected runs live here until Tab selects
 // them.
