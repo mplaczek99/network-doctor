@@ -330,24 +330,50 @@ func TestDeferredRestartDefersTargetSwap(t *testing.T) {
 	}
 }
 
-// A tool hotkey while a job runs defers the tool launch (last write wins).
-func TestDeferredTool(t *testing.T) {
+// Starting another tool keeps the first one running, routes its output in the
+// background, and lets Tab select it again.
+func TestConcurrentToolsCanSwitch(t *testing.T) {
 	m := newModel(mustTarget(t, "github.com"), false)
 	m.generation = 1
 	canceled := false
-	m.activeJob = &job{id: "j", cancel: func() { canceled = true }}
+	m.activeJob = &job{id: "first", ch: make(chan tea.Msg, 1), cancel: func() { canceled = true }}
+	m.jobStatus, m.jobName, m.jobDisplay = JobRunning, "first tool", "first"
+	m.tools = []Tool{{
+		Key: "z", Name: "second tool", Bin: os.Args[0], available: true,
+		Build: func(*diagnostic.Target) ([]string, []string, string) {
+			return []string{"-test.run=TestHelperProcess"},
+				append(os.Environ(), "GO_HELPER=1", "GO_HELPER_MODE=lines", "GO_HELPER_N=1"),
+				"second"
+		},
+	}}
 
-	u, _ := m.Update(keyMsg("p")) // ping hotkey
+	u, cmd := m.Update(keyMsg("z"))
 	nm := asModel(t, u)
-	if nm.pending == nil || nm.pending.kind != pendTool {
-		t.Fatal("a tool hotkey during a job must defer the launch")
+	if cmd == nil || nm.activeJob == nil || nm.activeJob.id == "first" {
+		t.Fatal("second tool must start immediately")
 	}
-	if nm.pending.tool.Key != "p" {
-		t.Errorf("deferred tool = %q, want ping (p)", nm.pending.tool.Key)
+	second := nm.activeJob
+	if canceled || nm.pending != nil || len(nm.otherJobs) != 1 || nm.otherJobs[0].active.id != "first" {
+		t.Fatalf("first tool was not preserved (canceled=%v pending=%v other=%+v)", canceled, nm.pending, nm.otherJobs)
 	}
-	if !canceled {
-		t.Error("the running job must be canceled before the new tool")
+	if !strings.Contains(nm.View(), "tab") {
+		t.Fatal("multiple jobs must show the switch key")
 	}
+
+	u, cmd = nm.Update(ToolOutputMsg{JobID: "first", Generation: 1, Line: "still running"})
+	nm = asModel(t, u)
+	if cmd == nil || len(nm.otherJobs[0].lines) != 1 {
+		t.Fatal("background output must keep streaming")
+	}
+
+	u, _ = nm.Update(tea.KeyMsg{Type: tea.KeyTab})
+	nm = asModel(t, u)
+	if nm.activeJob == nil || nm.activeJob.id != "first" || nm.jobLines[0] != "still running" {
+		t.Fatalf("Tab selected job %q with lines %v, want first job", nm.activeJob.id, nm.jobLines)
+	}
+
+	second.cancel()
+	_, _ = drain(t, second.ch)
 }
 
 // Output lines interleave in arrival order; stale messages are dropped.

@@ -41,13 +41,26 @@ type pendingKind int
 const (
 	pendQuit pendingKind = iota
 	pendRestart
-	pendTool
 )
 
 type pendingAction struct {
 	kind   pendingKind
-	tool   Tool
 	target *diagnostic.Target
+}
+
+// jobState is one tool run's process and display state. The model's existing
+// job fields are the selected run; unselected runs live here until Tab selects
+// them.
+type jobState struct {
+	active  *job
+	status  JobStatus
+	name    string
+	display string
+	lines   []string
+	dropped int64
+	evicted int
+	start   time.Time
+	dur     time.Duration
 }
 
 const (
@@ -90,7 +103,8 @@ type model struct {
 	jobDropped int64 // channel-overflow drops, reported by ToolDoneMsg
 	jobEvicted int   // oldest lines evicted from the jobLines ring buffer
 	jobStart   time.Time
-	jobDur     time.Duration // total runtime of the last finished job
+	jobDur     time.Duration // total runtime of the selected finished job
+	otherJobs  []jobState
 
 	// Output viewport (Enter). follow sticks to the tail while output arrives;
 	// scrolling up turns it off, scrolling back to the bottom re-enables it.
@@ -176,13 +190,13 @@ func (m model) allDone() bool { return len(m.results) == len(m.probes) }
 
 // reportReady reports whether every check has a result and no tool is running.
 func (m model) reportReady() bool {
-	return m.allDone() && m.activeJob == nil && m.jobStatus != JobRunning
+	return m.allDone() && !m.jobsRunning() && m.jobStatus != JobRunning
 }
 
 // spinnerActive reports whether the spinner tick chain should keep running:
 // while a started probe chain is pending or a drill-down job is live.
 func (m model) spinnerActive() bool {
-	return ((!m.toolbox || m.generation > 0 || m.chainRan()) && !m.allDone()) || m.activeJob != nil
+	return ((!m.toolbox || m.generation > 0 || m.chainRan()) && !m.allDone()) || m.jobsRunning()
 }
 
 // setNotice shows one-line feedback and schedules its expiry. The expiry tick
@@ -306,22 +320,49 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case ToolOutputMsg:
-		if m.activeJob == nil || msg.Generation != m.generation || msg.JobID != m.activeJob.id {
-			return m, nil // stale job message
-		}
-		m.appendJobLine(msg.Line)
-		if m.viewing {
-			m.refreshViewport()
-		}
-		return m, waitForMsg(m.activeJob.ch)
-
-	case ToolDoneMsg:
-		if m.activeJob == nil || msg.Generation != m.generation || msg.JobID != m.activeJob.id {
+		if msg.Generation != m.generation {
 			return m, nil
 		}
-		m.jobStatus, m.jobDropped, m.activeJob = msg.Status, msg.Dropped, nil
-		m.jobDur = time.Since(m.jobStart)
-		if m.pending != nil {
+		if m.activeJob != nil && msg.JobID == m.activeJob.id {
+			m.appendJobLine(msg.Line)
+			if m.viewing {
+				m.refreshViewport()
+			}
+			return m, waitForMsg(m.activeJob.ch)
+		}
+		for i := range m.otherJobs {
+			j := &m.otherJobs[i]
+			if j.active != nil && msg.JobID == j.active.id {
+				appendJobLine(&j.lines, &j.evicted, msg.Line)
+				return m, waitForMsg(j.active.ch)
+			}
+		}
+		return m, nil
+
+	case ToolDoneMsg:
+		if msg.Generation != m.generation {
+			return m, nil
+		}
+		found := false
+		if m.activeJob != nil && msg.JobID == m.activeJob.id {
+			m.jobStatus, m.jobDropped, m.activeJob = msg.Status, msg.Dropped, nil
+			m.jobDur = time.Since(m.jobStart)
+			found = true
+		} else {
+			for i := range m.otherJobs {
+				j := &m.otherJobs[i]
+				if j.active != nil && msg.JobID == j.active.id {
+					j.status, j.dropped, j.active = msg.Status, msg.Dropped, nil
+					j.dur = time.Since(j.start)
+					found = true
+					break
+				}
+			}
+		}
+		if !found {
+			return m, nil
+		}
+		if m.pending != nil && !m.jobsRunning() {
 			p := m.pending
 			m.pending = nil
 			return m.runPending(p)
@@ -346,8 +387,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q":
-		if m.activeJob != nil {
-			m.activeJob.cancel() // non-blocking; quit on the terminal event
+		if m.jobsRunning() {
+			m.cancelJobs() // non-blocking; quit after every terminal event
 			m.pending = &pendingAction{kind: pendQuit}
 			return m, nil
 		}
@@ -385,12 +426,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.setNotice("network discovery needs nmap", false)
 		}
 		m.networkCIDR = cidr
-		if m.activeJob != nil {
-			m.activeJob.cancel()
-			m.pending = &pendingAction{kind: pendTool, tool: tool}
-			return m, nil
-		}
 		return m, m.launchTool(tool)
+	case "tab":
+		m.switchJob()
+		return m, nil
 	case "up", "k":
 		if m.networkMap {
 			if m.mapSelected > 0 {
@@ -451,11 +490,6 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.confirmTool = &t
 				return m, nil
 			}
-			if m.activeJob != nil {
-				m.activeJob.cancel()
-				m.pending = &pendingAction{kind: pendTool, tool: tool} // last write wins
-				return m, nil
-			}
 			return m, m.launchTool(tool)
 		}
 	}
@@ -469,11 +503,6 @@ func (m model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	tool := *m.confirmTool
 	m.confirmTool = nil
 	if msg.String() == "y" {
-		if m.activeJob != nil {
-			m.activeJob.cancel()
-			m.pending = &pendingAction{kind: pendTool, tool: tool}
-			return m, nil
-		}
 		return m, m.launchTool(tool)
 	}
 	return m, nil
@@ -499,6 +528,9 @@ func (m model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "end":
 		m.vp.GotoBottom()
 		m.follow = true
+		return m, nil
+	case "tab":
+		m.switchJob()
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -531,8 +563,8 @@ func (m model) handlePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) restartWithTarget(t *diagnostic.Target) (tea.Model, tea.Cmd) {
-	if m.activeJob != nil {
-		m.activeJob.cancel()
+	if m.jobsRunning() {
+		m.cancelJobs()
 		m.pending = &pendingAction{kind: pendRestart, target: t}
 		return m, nil
 	}
@@ -574,8 +606,6 @@ func (m model) runPending(p *pendingAction) (tea.Model, tea.Cmd) {
 	case pendRestart:
 		m.applyTarget(p.target)
 		return m, m.doRestart()
-	case pendTool:
-		return m, m.launchTool(p.tool)
 	}
 	return m, nil
 }
@@ -592,6 +622,7 @@ func (m *model) doRestart() tea.Cmd {
 	m.results = map[diagnostic.ProbeID]diagnostic.ProbeResult{}
 	m.started = map[diagnostic.ProbeID]bool{}
 	m.activeJob, m.pending, m.confirmTool = nil, nil, nil
+	m.otherJobs = nil
 	m.jobStatus, m.jobName, m.jobDisplay, m.jobDur = JobQueued, "", "", 0
 	m.jobLines, m.jobDropped, m.jobEvicted = nil, 0, 0
 	m.networkMap, m.mapSelected, m.networkCIDR = false, 0, ""
@@ -608,6 +639,7 @@ func (m *model) doRestart() tea.Cmd {
 }
 
 func (m *model) launchTool(tool Tool) tea.Cmd {
+	m.stashJob()
 	m.networkMap = tool.Key == "v"
 	if m.networkMap {
 		m.mapSelected = 0
@@ -644,6 +676,61 @@ func (m *model) launchTool(tool Tool) tea.Cmd {
 		return tea.Batch(cmd, m.spinner.Tick)
 	}
 	return cmd
+}
+
+func (m model) selectedJob() jobState {
+	return jobState{m.activeJob, m.jobStatus, m.jobName, m.jobDisplay, m.jobLines,
+		m.jobDropped, m.jobEvicted, m.jobStart, m.jobDur}
+}
+
+func (m *model) loadJob(j jobState) {
+	m.activeJob, m.jobStatus, m.jobName, m.jobDisplay, m.jobLines = j.active, j.status, j.name, j.display, j.lines
+	m.jobDropped, m.jobEvicted, m.jobStart, m.jobDur = j.dropped, j.evicted, j.start, j.dur
+}
+
+func (m *model) stashJob() {
+	if m.activeJob != nil || m.jobStatus != JobQueued {
+		m.otherJobs = append(m.otherJobs, m.selectedJob())
+		m.loadJob(jobState{status: JobQueued})
+	}
+}
+
+func (m *model) switchJob() {
+	if len(m.otherJobs) == 0 {
+		return
+	}
+	current := m.selectedJob()
+	next := m.otherJobs[0]
+	m.otherJobs = append(m.otherJobs[1:], current)
+	m.loadJob(next)
+	m.networkMap = false
+	if m.viewing {
+		m.follow = true
+		m.refreshViewport()
+	}
+}
+
+func (m model) jobsRunning() bool {
+	if m.activeJob != nil {
+		return true
+	}
+	for _, j := range m.otherJobs {
+		if j.active != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *model) cancelJobs() {
+	if m.activeJob != nil && m.activeJob.cancel != nil {
+		m.activeJob.cancel()
+	}
+	for _, j := range m.otherJobs {
+		if j.active != nil && j.active.cancel != nil {
+			j.active.cancel()
+		}
+	}
 }
 
 // scheduleStep marks newly-skippable probes (a dependency failed) and returns run
@@ -717,16 +804,23 @@ func snapshot(res map[diagnostic.ProbeID]diagnostic.ProbeResult, deps []diagnost
 // separately from channel-overflow drops (jobDropped) so the viewport context
 // line stays accurate.
 func (m *model) appendJobLine(text string) {
-	m.jobLines = append(m.jobLines, text)
-	if n := len(m.jobLines) - maxJobLines; n > 0 {
-		if m.viewing && !m.follow {
-			for _, ln := range m.jobLines[:n] {
-				h := lipgloss.Height(lipgloss.NewStyle().Width(m.vpWidth()).Render(ln))
-				m.vp.SetYOffset(m.vp.YOffset - h)
-			}
-		}
-		m.jobEvicted += n
-		m.jobLines = m.jobLines[n:]
+	oldLen := len(m.jobLines)
+	var evictedLine string
+	if oldLen == maxJobLines {
+		evictedLine = m.jobLines[0]
+	}
+	appendJobLine(&m.jobLines, &m.jobEvicted, text)
+	if len(m.jobLines) == oldLen && m.viewing && !m.follow {
+		h := lipgloss.Height(lipgloss.NewStyle().Width(m.vpWidth()).Render(evictedLine))
+		m.vp.SetYOffset(m.vp.YOffset - h)
+	}
+}
+
+func appendJobLine(lines *[]string, evicted *int, text string) {
+	*lines = append(*lines, text)
+	if n := len(*lines) - maxJobLines; n > 0 {
+		*evicted += n
+		*lines = (*lines)[n:]
 	}
 }
 
@@ -1130,6 +1224,9 @@ func (m model) helpView(deferred bool) string {
 			} else if hasJob {
 				kv = append(kv, "enter", "full output")
 			}
+			if len(m.otherJobs) > 0 {
+				kv = append(kv, "tab", "switch job")
+			}
 			return helpKeys(m.width, append(kv, "r", "run the checks", "q", "quit")...)
 		}
 		view := "network map"
@@ -1139,6 +1236,9 @@ func (m model) helpView(deferred bool) string {
 		}
 		if hasJob {
 			kv = append(kv, "enter", "full output")
+		}
+		if len(m.otherJobs) > 0 {
+			kv = append(kv, "tab", "switch job")
 		}
 		return helpKeys(m.width, append(kv, "q", "quit")...)
 	}
@@ -1152,6 +1252,9 @@ func (m model) helpView(deferred bool) string {
 	}
 	if hasJob && (!m.networkMap || len(m.networkHosts()) == 0) {
 		kv = append(kv, "enter", "full output")
+	}
+	if len(m.otherJobs) > 0 {
+		kv = append(kv, "tab", "switch job")
 	}
 	if m.reportReady() {
 		kv = append(kv, "y", "copy report", "w", "save report")
@@ -1261,6 +1364,9 @@ func styled(s fmt.Stringer) string {
 // once the job has finished.
 func (m model) jobStatusLine() string {
 	s := faintStyle.Render(m.jobName+" — ") + styled(m.jobStatus)
+	if len(m.otherJobs) > 0 {
+		s += faintStyle.Render(fmt.Sprintf(" · %d jobs · tab to switch", len(m.otherJobs)+1))
+	}
 	if m.activeJob != nil {
 		return s + " " + m.spinner.View() + faintStyle.Render(fmt.Sprintf(" %.0fs", time.Since(m.jobStart).Seconds()))
 	}
@@ -1287,7 +1393,11 @@ func (m model) viewerFooter() string {
 	if notice := m.noticeView(); notice != "" {
 		return notice
 	}
-	return helpKeys(m.width, "↑/↓", "scroll", "pgup/pgdn", "page", "home/end", "top/bottom", "y", "copy output", "esc/q", "back")
+	kv := []string{"↑/↓", "scroll", "pgup/pgdn", "page", "home/end", "top/bottom"}
+	if len(m.otherJobs) > 0 {
+		kv = append(kv, "tab", "switch job")
+	}
+	return helpKeys(m.width, append(kv, "y", "copy output", "esc/q", "back")...)
 }
 
 // vpContext is the viewport position line, in wrapped display-line numbers:
