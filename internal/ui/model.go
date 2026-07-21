@@ -69,6 +69,7 @@ type model struct {
 
 	selected    int
 	networkMap  bool
+	mapSelected int
 	networkCIDR string
 	spinner     spinner.Model
 
@@ -391,16 +392,36 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.launchTool(tool)
 	case "up", "k":
+		if m.networkMap {
+			if m.mapSelected > 0 {
+				m.mapSelected--
+			}
+			return m, nil
+		}
 		if m.selected > 0 {
 			m.selected--
 		}
 		return m, nil
 	case "down", "j":
+		if m.networkMap {
+			if m.mapSelected < len(m.networkHosts())-1 {
+				m.mapSelected++
+			}
+			return m, nil
+		}
 		if m.selected < len(m.probes)-1 {
 			m.selected++
 		}
 		return m, nil
 	case "enter":
+		if hosts := m.networkHosts(); m.networkMap && len(hosts) > 0 {
+			address, _, _ := strings.Cut(hosts[m.mapSelected], " ")
+			t, err := diagnostic.ParseTarget(address)
+			if err != nil {
+				return m, m.setNotice("invalid discovered target: "+err.Error(), false)
+			}
+			return m.restartWithTarget(t)
+		}
 		if m.activeJob == nil && m.jobStatus == JobQueued {
 			return m, nil // no job has run; nothing to view
 		}
@@ -501,18 +522,22 @@ func (m model) handlePromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.entering = false
-		if m.activeJob != nil {
-			m.activeJob.cancel()
-			m.pending = &pendingAction{kind: pendRestart, target: t}
-			return m, nil
-		}
-		m.applyTarget(t)
-		return m, m.doRestart()
+		return m.restartWithTarget(t)
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	m.inputErr = ""
 	return m, cmd
+}
+
+func (m model) restartWithTarget(t *diagnostic.Target) (tea.Model, tea.Cmd) {
+	if m.activeJob != nil {
+		m.activeJob.cancel()
+		m.pending = &pendingAction{kind: pendRestart, target: t}
+		return m, nil
+	}
+	m.applyTarget(t)
+	return m, m.doRestart()
 }
 
 // parseRunArgs parses the restart prompt as a netdoc command line: an optional
@@ -569,7 +594,7 @@ func (m *model) doRestart() tea.Cmd {
 	m.activeJob, m.pending, m.confirmTool = nil, nil, nil
 	m.jobStatus, m.jobName, m.jobDisplay, m.jobDur = JobQueued, "", "", 0
 	m.jobLines, m.jobDropped, m.jobEvicted = nil, 0, 0
-	m.networkMap, m.networkCIDR = false, ""
+	m.networkMap, m.mapSelected, m.networkCIDR = false, 0, ""
 	m.notice = ""
 	if m.viewing {
 		m.refreshViewport()
@@ -584,6 +609,9 @@ func (m *model) doRestart() tea.Cmd {
 
 func (m *model) launchTool(tool Tool) tea.Cmd {
 	m.networkMap = tool.Key == "v"
+	if m.networkMap {
+		m.mapSelected = 0
+	}
 	if !tool.Available() {
 		m.jobName, m.jobStatus = tool.Name, JobFailed
 		m.jobLines, m.jobDropped, m.jobEvicted = []string{tool.Bin + " not found — install it"}, 0, 0
@@ -915,12 +943,9 @@ func (m model) bodyView(deferred bool) string {
 		panelStyle.Width(rightW).Height(h).Render(rightStr))
 }
 
-// networkMapView renders hosts found by the LAN scan.
-func (m model) networkMapView() string {
+func (m model) networkHosts() []string {
 	source, _ := m.discoveryNetwork()
 	var hosts []string
-	domains := map[string]int{}
-	namedHosts := 0
 	for _, line := range m.jobLines {
 		host, ok := strings.CutPrefix(line, "Host: ")
 		if !ok {
@@ -936,6 +961,17 @@ func (m model) networkMapView() string {
 		}
 		host = strings.TrimSuffix(host, " ()")
 		hosts = append(hosts, host)
+	}
+	return hosts
+}
+
+// networkMapView renders hosts found by the LAN scan.
+func (m model) networkMapView() string {
+	source, _ := m.discoveryNetwork()
+	hosts := m.networkHosts()
+	domains := map[string]int{}
+	namedHosts := 0
+	for _, host := range hosts {
 		if _, name, ok := strings.Cut(host, " ("); ok {
 			namedHosts++
 			if _, domain, ok := strings.Cut(strings.TrimSuffix(name, ")"), "."); ok {
@@ -980,7 +1016,12 @@ func (m model) networkMapView() string {
 		if i == len(hosts)-1 {
 			branch = "└─ "
 		}
-		b.WriteString(faintStyle.Render(branch) + passStyle.Render("●") + " " + host + "\n")
+		marker := "  "
+		if i == m.mapSelected {
+			marker = selStyle.Render("› ")
+			host = selStyle.Render(host)
+		}
+		b.WriteString(marker + faintStyle.Render(branch) + passStyle.Render("●") + " " + host + "\n")
 	}
 	if len(hosts) == 0 {
 		switch {
@@ -1082,10 +1123,16 @@ func (m model) helpView(deferred bool) string {
 	// as jobView), so the hint tracks exactly when the key does something.
 	hasJob := m.activeJob != nil || m.jobStatus != JobQueued
 	if deferred {
-		view := "network map"
 		if m.networkMap {
-			view = "checks"
+			kv := []string{"v", "checks"}
+			if len(m.networkHosts()) > 0 {
+				kv = append([]string{"↑/↓", "select device", "enter", "set target"}, kv...)
+			} else if hasJob {
+				kv = append(kv, "enter", "full output")
+			}
+			return helpKeys(m.width, append(kv, "r", "run the checks", "q", "quit")...)
 		}
+		view := "network map"
 		kv := []string{"r", "run the checks", "v", view}
 		if len(m.tools) > 0 {
 			kv = append(kv, "letter", "runs that tool")
@@ -1099,8 +1146,11 @@ func (m model) helpView(deferred bool) string {
 	kv := []string{"↑/↓", "scroll", "v", view}
 	if m.networkMap {
 		kv = []string{"v", "checks"}
+		if len(m.networkHosts()) > 0 {
+			kv = append([]string{"↑/↓", "select device", "enter", "set target"}, kv...)
+		}
 	}
-	if hasJob {
+	if hasJob && (!m.networkMap || len(m.networkHosts()) == 0) {
 		kv = append(kv, "enter", "full output")
 	}
 	if m.reportReady() {

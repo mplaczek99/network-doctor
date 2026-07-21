@@ -105,6 +105,32 @@ func TestNetworkMapToggle(t *testing.T) {
 	}
 }
 
+func TestNetworkMapSelectsNewTarget(t *testing.T) {
+	m := newModel(mustTarget(t, "example.com:22"), false)
+	m.networkMap = true
+	m.networkCIDR = "192.168.12.0/24"
+	m.jobName, m.jobStatus = lanDiscoveryName, JobDone
+	m.jobLines = []string{
+		"Host: 192.168.12.1 (router.lan)\tStatus: Up",
+		"Host: 192.168.12.50 (printer.lan)\tStatus: Up",
+	}
+
+	u, _ := m.Update(keyMsg("j"))
+	m = asModel(t, u)
+	if m.mapSelected != 1 || !strings.Contains(m.helpView(false), "set target") {
+		t.Fatalf("map selection = %d, help = %q", m.mapSelected, m.helpView(false))
+	}
+
+	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = asModel(t, u)
+	if m.target == nil || m.target.Host != "192.168.12.50" || m.target.Port != 443 {
+		t.Fatalf("target = %+v, want discovered host on the default port", m.target)
+	}
+	if m.networkMap || m.generation != 1 || cmd == nil {
+		t.Fatal("selecting a map host must close the map and restart the checks")
+	}
+}
+
 func TestReportReadyWithoutToolRun(t *testing.T) {
 	m := newModel(nil, false)
 	doneResults(&m, "")

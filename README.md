@@ -113,9 +113,9 @@ literals are accepted bare (`::1`) or bracketed with a port (`[::1]:443`).
 
 | Key | Action |
 |-----|--------|
-| `↑`/`↓` (`k`/`j`) | select a probe row |
+| `↑`/`↓` (`k`/`j`) | select a probe row, or a device in the network map |
 | `v` | run a LAN scan and show a network map of the local private `/24` (unprivileged `nmap`) |
-| `enter` | open the current tool job's output in a scrollable full-screen viewer |
+| `enter` | set the selected map device as the new target, or open the current tool job's output |
 | `y` (viewer) | copy the viewer's retained full output (up to 5,000 lines) |
 | `r` | restart — opens a prompt to edit the `netdoc` arguments (`enter` runs, `esc` backs out) |
 | `y` / `w` | yank / write (copy / save) a report of the chain plus the completed tool output |
