@@ -917,16 +917,10 @@ func (m model) bodyView(deferred bool) string {
 
 // networkMapView renders hosts found by the LAN scan.
 func (m model) networkMapView() string {
-	var b strings.Builder
-	b.WriteString(panelTitleStyle.Render("Network map — "+lanDiscoveryName+" — "+m.networkCIDR) + "\n")
 	source, _ := m.discoveryNetwork()
-	b.WriteString(selStyle.Render("◆") + " This device")
-	if source != nil {
-		b.WriteString(" " + source.String())
-	}
-	b.WriteString("\n")
-
 	var hosts []string
+	domains := map[string]int{}
+	namedHosts := 0
 	for _, line := range m.jobLines {
 		host, ok := strings.CutPrefix(line, "Host: ")
 		if !ok {
@@ -940,9 +934,48 @@ func (m model) networkMapView() string {
 		if strings.TrimSpace(status) != "Up" || source != nil && strings.HasPrefix(host, source.String()+" ") {
 			continue
 		}
-		hosts = append(hosts, strings.TrimSuffix(host, " ()"))
+		host = strings.TrimSuffix(host, " ()")
+		hosts = append(hosts, host)
+		if _, name, ok := strings.Cut(host, " ("); ok {
+			namedHosts++
+			if _, domain, ok := strings.Cut(strings.TrimSuffix(name, ")"), "."); ok {
+				domains[strings.ToLower(domain)]++
+			}
+		}
 	}
+	commonDomain := ""
+	for domain, count := range domains {
+		if namedHosts > 1 && count == namedHosts {
+			commonDomain = domain
+		}
+	}
+
+	panelWidth := max(m.width-2, 24)
+	title := panelTitleStyle.Render("Network map — " + lanDiscoveryName + " — " + m.networkCIDR)
+	if commonDomain != "" {
+		domain := faintStyle.Render("Domain: " + commonDomain)
+		contentWidth := panelWidth - panelStyle.GetHorizontalPadding()
+		if gap := contentWidth - lipgloss.Width(title) - lipgloss.Width(domain); gap > 0 {
+			title += strings.Repeat(" ", gap) + domain
+		} else {
+			title += "\n" + lipgloss.NewStyle().Width(contentWidth).Align(lipgloss.Right).Render(domain)
+		}
+	}
+	var b strings.Builder
+	b.WriteString(title + "\n")
+	b.WriteString(selStyle.Render("◆") + " This device")
+	if source != nil {
+		b.WriteString(" " + source.String())
+	}
+	b.WriteString("\n")
+
 	for i, host := range hosts {
+		if address, name, ok := strings.Cut(host, " ("); ok {
+			name = strings.TrimSuffix(name, ")")
+			if short, domain, ok := strings.Cut(name, "."); ok && strings.EqualFold(domain, commonDomain) {
+				host = address + " (" + short + ")"
+			}
+		}
 		branch := "├─ "
 		if i == len(hosts)-1 {
 			branch = "└─ "
@@ -960,7 +993,7 @@ func (m model) networkMapView() string {
 		}
 	}
 
-	return panelStyle.Width(max(m.width-2, 24)).Render(strings.TrimRight(b.String(), "\n"))
+	return panelStyle.Width(panelWidth).Render(strings.TrimRight(b.String(), "\n"))
 }
 
 func (m model) discoveryNetwork() (net.IP, string) {

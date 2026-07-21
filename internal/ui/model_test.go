@@ -78,12 +78,24 @@ func TestNetworkMapToggle(t *testing.T) {
 	nm.activeJob = nil
 	nm.jobName, nm.jobStatus = lanDiscoveryName, JobDone
 	nm.jobLines = []string{
-		"Host: 192.168.12.1 (router.local)\tStatus: Up",
-		"Host: 192.168.12.50 (living-room-tv.local)\tStatus: Up",
+		"Host: 192.168.12.1 (router.lan.example)\tStatus: Up",
+		"Host: 192.168.12.50 (living-room-tv.lan.example)\tStatus: Up",
+		"Host: 192.168.12.51 ()\tStatus: Up",
 	}
 	view := nm.View()
-	if !nm.networkMap || !strings.Contains(view, "router.local") || !strings.Contains(view, "living-room-tv.local") || strings.Contains(view, "Host:") {
+	if !nm.networkMap || !strings.Contains(view, "192.168.12.1 (router)") || !strings.Contains(view, "192.168.12.50 (living-room-tv)") || !strings.Contains(view, "Domain: lan.example") || !strings.Contains(view, "192.168.12.51") || strings.Contains(view, "Host:") {
 		t.Fatalf("LAN scan must render discovered devices in the network map:\n%s", view)
+	}
+	for _, line := range strings.Split(view, "\n") {
+		if at := strings.Index(line, "Domain:"); at >= 0 && lipgloss.Width(line[:at]) <= nm.width/2 {
+			t.Fatalf("domain must be right-aligned in the network map:\n%s", view)
+		}
+	}
+
+	nm.jobLines = append(nm.jobLines, "Host: 192.168.12.52 (printer.office.example)\tStatus: Up")
+	view = nm.View()
+	if !strings.Contains(view, "router.lan.example") || !strings.Contains(view, "living-room-tv.lan.example") || !strings.Contains(view, "printer.office.example") || strings.Contains(view, "Domain:") {
+		t.Fatalf("mixed domains must remain visible in the network map:\n%s", view)
 	}
 
 	u, _ = nm.Update(keyMsg("v"))
