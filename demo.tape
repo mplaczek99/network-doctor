@@ -21,9 +21,18 @@ Sleep 5s
 Down@700ms 4
 Sleep 1.5s
 Down@700ms 3
+Sleep 1.5s
+
+# Launch a slow traceroute; it streams hops into the job pane.
+Type "t"
+Sleep 2.5s
+
+# Start mtr while the traceroute is still running — now two live jobs.
+Type "m"
 Sleep 2s
 
-# Drill down: DNS lookup (dig) streams into the job pane.
-# End here (no quit) so the looping GIF closes on the full UI.
-Type "d"
-Sleep 5s
+# Tab between the two concurrent jobs while both stream.
+Tab
+Sleep 3s
+Tab
+Sleep 4s

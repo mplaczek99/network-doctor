@@ -3,7 +3,7 @@
 A terminal UI that diagnoses your network connectivity and tells you **where the
 connection breaks** in plain English — not just a wall of tool output.
 
-![Network Doctor diagnosing github.com:443](assets/demo.gif)
+![Network Doctor diagnosing github.com:443, running a traceroute and mtr concurrently](assets/demo.gif)
 
 ## Install
 
