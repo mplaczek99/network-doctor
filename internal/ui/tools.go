@@ -125,25 +125,26 @@ func toolsFor(t *diagnostic.Target, goos string) []Tool {
 // nmapTool builds the nmap adapter: an explicitly-confirmed port scan with
 // conservative defaults, because a scan can trip the target's intrusion
 // detection. A plain TCP connect scan (-sT — no raw sockets or root, so the
-// shown command is exactly what runs at any privilege), polite timing (-T2) to
-// keep the probe rate low, host discovery skipped (-Pn, the target is already
-// known reachable), and a hard --host-timeout so the run always ends and yields
-// partial results before the job timeout kills it. An explicit target port
-// scans only that port; otherwise all TCP ports. Deliberately no
+// shown command is exactly what runs at any privilege), brisk timing (-T4, fine
+// for a host we already reached), host discovery skipped (-Pn, the target is
+// already known reachable), and a hard --host-timeout so the run always ends
+// and yields partial results before the job timeout kills it. An explicit
+// target port scans only that port; otherwise nmap's default top-1000 ports
+// (which include 22/80/443). A full -p- sweep is deliberately avoided: it can't
+// cover all 65535 ports inside --host-timeout, so it times out and reports
+// nothing — worse than a top-1000 scan that finishes. Deliberately no
 // -sV/-O/-A: version and OS detection are louder, slower, and not needed to
 // answer "is the port open?".
 func nmapTool(quote func([]string) string, host string) Tool {
 	return Tool{
 		Key: "n", Name: "nmap", Purpose: "port scan", Bin: "nmap", Confirm: true, Timeout: 120 * time.Second,
 		Build: func(t *diagnostic.Target) ([]string, []string, string) {
-			args := []string{"-sT", "-T2", "-Pn", "--host-timeout", "90s"}
+			args := []string{"-sT", "-T4", "-Pn", "--host-timeout", "110s"}
 			if t.IsLiteral && t.IP.To4() == nil {
 				args = append(args, "-6")
 			}
 			if t.PortExplicit {
 				args = append(args, "-p", strconv.Itoa(t.Port))
-			} else {
-				args = append(args, "-p-")
 			}
 			args = append(args, host)
 			return args, nil, "nmap " + quote(args)
