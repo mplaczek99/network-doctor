@@ -48,11 +48,8 @@ type pendingAction struct {
 	target *diagnostic.Target
 }
 
-// ponytail: the selected job stays in model's legacy fields to contain this
-// change; move every run into []jobState when job controls grow.
-// jobState is one tool run's process and display state. The model's existing
-// job fields are the selected run; unselected runs live here until Tab selects
-// them.
+// jobState is one tool run's process and display state. The selected run is
+// model.cur; unselected runs wait in otherJobs until Tab selects them.
 type jobState struct {
 	active  *job
 	status  JobStatus
@@ -95,18 +92,10 @@ type model struct {
 	cancel context.CancelFunc
 
 	// Drill-down job state (Phase 2).
-	tools      []Tool
-	activeJob  *job
-	pending    *pendingAction
-	jobStatus  JobStatus
-	jobName    string
-	jobDisplay string
-	jobLines   []string
-	jobDropped int64 // channel-overflow drops, reported by ToolDoneMsg
-	jobEvicted int   // oldest lines evicted from the jobLines ring buffer
-	jobStart   time.Time
-	jobDur     time.Duration // total runtime of the selected finished job
-	otherJobs  []jobState
+	tools     []Tool
+	pending   *pendingAction
+	cur       jobState // the selected run; zero value means none yet
+	otherJobs []jobState
 
 	// Output viewport (Enter). follow sticks to the tail while output arrives;
 	// scrolling up turns it off, scrolling back to the bottom re-enables it.
@@ -166,15 +155,14 @@ func New(t *diagnostic.Target, toolbox bool) tea.Model {
 	sp.Spinner = spinner.MiniDot
 	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	return model{
-		target:    t,
-		probes:    probes,
-		results:   map[diagnostic.ProbeID]diagnostic.ProbeResult{},
-		started:   map[diagnostic.ProbeID]bool{},
-		tools:     toolsFor(t, runtime.GOOS),
-		jobStatus: JobQueued,
-		spinner:   sp,
-		toolbox:   toolbox,
-		width:     100, // placeholder until the terminal introduces itself (WindowSizeMsg)
+		target:  t,
+		probes:  probes,
+		results: map[diagnostic.ProbeID]diagnostic.ProbeResult{},
+		started: map[diagnostic.ProbeID]bool{},
+		tools:   toolsFor(t, runtime.GOOS),
+		spinner: sp,
+		toolbox: toolbox,
+		width:   100, // placeholder until the terminal introduces itself (WindowSizeMsg)
 	}
 }
 
@@ -192,7 +180,7 @@ func (m model) allDone() bool { return len(m.results) == len(m.probes) }
 
 // reportReady reports whether every check has a result and no tool is running.
 func (m model) reportReady() bool {
-	return m.allDone() && !m.jobsRunning() && m.jobStatus != JobRunning
+	return m.allDone() && !m.jobsRunning() && m.cur.status != JobRunning
 }
 
 // spinnerActive reports whether the spinner tick chain should keep running:
@@ -331,12 +319,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Generation != m.generation {
 			return m, nil
 		}
-		if m.activeJob != nil && msg.JobID == m.activeJob.id {
+		if m.cur.active != nil && msg.JobID == m.cur.active.id {
 			m.appendJobLine(msg.Line)
 			if m.viewing {
 				m.refreshViewport()
 			}
-			return m, waitForMsg(m.activeJob.ch)
+			return m, waitForMsg(m.cur.active.ch)
 		}
 		for i := range m.otherJobs {
 			j := &m.otherJobs[i]
@@ -352,9 +340,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		found := false
-		if m.activeJob != nil && msg.JobID == m.activeJob.id {
-			m.jobStatus, m.jobDropped, m.activeJob = msg.Status, msg.Dropped, nil
-			m.jobDur = time.Since(m.jobStart)
+		if m.cur.active != nil && msg.JobID == m.cur.active.id {
+			m.cur.status, m.cur.dropped, m.cur.active = msg.Status, msg.Dropped, nil
+			m.cur.dur = time.Since(m.cur.start)
 			found = true
 		} else {
 			for i := range m.otherJobs {
@@ -421,7 +409,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.networkMap = false
 			return m, nil
 		}
-		if m.jobName == lanDiscoveryName {
+		if m.cur.name == lanDiscoveryName {
 			m.networkMap = true
 			return m, nil
 		}
@@ -468,7 +456,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m.restartWithTarget(t)
 		}
-		if m.activeJob == nil && m.jobStatus == JobQueued {
+		if m.cur.active == nil && m.cur.status == JobQueued {
 			return m, nil // no job has run; nothing to view
 		}
 		m.viewing, m.follow = true, true
@@ -627,10 +615,8 @@ func (m *model) doRestart() tea.Cmd {
 	m.generation++
 	m.results = map[diagnostic.ProbeID]diagnostic.ProbeResult{}
 	m.started = map[diagnostic.ProbeID]bool{}
-	m.activeJob, m.pending, m.confirmTool = nil, nil, nil
-	m.otherJobs = nil
-	m.jobStatus, m.jobName, m.jobDisplay, m.jobDur = JobQueued, "", "", 0
-	m.jobLines, m.jobDropped, m.jobEvicted = nil, 0, 0
+	m.pending, m.confirmTool = nil, nil
+	m.cur, m.otherJobs = jobState{}, nil
 	m.networkMap, m.mapSelected, m.networkCIDR = false, 0, ""
 	m.notice = ""
 	if m.viewing {
@@ -651,10 +637,10 @@ func (m *model) launchTool(tool Tool) tea.Cmd {
 		m.mapSelected = 0
 	}
 	if !tool.Available() {
-		m.jobName, m.jobStatus = tool.Name, JobFailed
-		m.jobLines, m.jobDropped, m.jobEvicted = []string{tool.Bin + " not found — install it"}, 0, 0
-		m.jobDur = 0
-		m.jobDisplay = tool.Name
+		m.cur.name, m.cur.status = tool.Name, JobFailed
+		m.cur.lines, m.cur.dropped, m.cur.evicted = []string{tool.Bin + " not found — install it"}, 0, 0
+		m.cur.dur = 0
+		m.cur.display = tool.Name
 		return nil
 	}
 	wasTicking := m.spinnerActive()
@@ -667,37 +653,27 @@ func (m *model) launchTool(tool Tool) tea.Cmd {
 	}
 	j, cmd, err := startTool(m.ctx, m.generation, id, tool.Bin, args, env, tool.Timeout)
 	if err != nil {
-		m.jobName, m.jobStatus = tool.Name, JobFailed
-		m.jobLines, m.jobDropped, m.jobEvicted = []string{textsafe.Clean(err.Error())}, 0, 0
-		m.jobDisplay, m.jobDur = display, 0
+		m.cur.name, m.cur.status = tool.Name, JobFailed
+		m.cur.lines, m.cur.dropped, m.cur.evicted = []string{textsafe.Clean(err.Error())}, 0, 0
+		m.cur.display, m.cur.dur = display, 0
 		return nil
 	}
-	m.activeJob, m.jobStatus = j, JobRunning
-	m.jobLines, m.jobDropped, m.jobEvicted = nil, 0, 0
+	m.cur.active, m.cur.status = j, JobRunning
+	m.cur.lines, m.cur.dropped, m.cur.evicted = nil, 0, 0
 	if m.viewing {
 		m.refreshViewport()
 	}
-	m.jobName, m.jobDisplay, m.jobStart = tool.Name, display, time.Now()
+	m.cur.name, m.cur.display, m.cur.start = tool.Name, display, time.Now()
 	if !wasTicking {
 		return tea.Batch(cmd, m.spinner.Tick)
 	}
 	return cmd
 }
 
-func (m model) selectedJob() jobState {
-	return jobState{m.activeJob, m.jobStatus, m.jobName, m.jobDisplay, m.jobLines,
-		m.jobDropped, m.jobEvicted, m.jobStart, m.jobDur}
-}
-
-func (m *model) loadJob(j jobState) {
-	m.activeJob, m.jobStatus, m.jobName, m.jobDisplay, m.jobLines = j.active, j.status, j.name, j.display, j.lines
-	m.jobDropped, m.jobEvicted, m.jobStart, m.jobDur = j.dropped, j.evicted, j.start, j.dur
-}
-
 func (m *model) stashJob() {
-	if m.activeJob != nil || m.jobStatus != JobQueued {
-		m.otherJobs = append(m.otherJobs, m.selectedJob())
-		m.loadJob(jobState{status: JobQueued})
+	if m.cur.active != nil || m.cur.status != JobQueued {
+		m.otherJobs = append(m.otherJobs, m.cur)
+		m.cur = jobState{}
 	}
 }
 
@@ -705,10 +681,9 @@ func (m *model) switchJob() tea.Cmd {
 	if len(m.otherJobs) == 0 {
 		return nil
 	}
-	current := m.selectedJob()
 	next := m.otherJobs[0]
-	m.otherJobs = append(m.otherJobs[1:], current)
-	m.loadJob(next)
+	m.otherJobs = append(m.otherJobs[1:], m.cur)
+	m.cur = next
 	m.networkMap = false
 	if m.viewing {
 		m.follow = true
@@ -720,11 +695,11 @@ func (m *model) switchJob() tea.Cmd {
 		}
 		return nil
 	}
-	return m.setNotice("switched to "+m.jobName, true)
+	return m.setNotice("switched to "+m.cur.name, true)
 }
 
 func (m model) jobsRunning() bool {
-	if m.activeJob != nil {
+	if m.cur.active != nil {
 		return true
 	}
 	for _, j := range m.otherJobs {
@@ -736,8 +711,8 @@ func (m model) jobsRunning() bool {
 }
 
 func (m *model) cancelJobs() {
-	if m.activeJob != nil && m.activeJob.cancel != nil {
-		m.activeJob.cancel()
+	if m.cur.active != nil && m.cur.active.cancel != nil {
+		m.cur.active.cancel()
 	}
 	for _, j := range m.otherJobs {
 		if j.active != nil && j.active.cancel != nil {
@@ -817,13 +792,13 @@ func snapshot(res map[diagnostic.ProbeID]diagnostic.ProbeResult, deps []diagnost
 // separately from channel-overflow drops (jobDropped) so the viewport context
 // line stays accurate.
 func (m *model) appendJobLine(text string) {
-	oldLen := len(m.jobLines)
+	oldLen := len(m.cur.lines)
 	var evictedLine string
 	if oldLen == maxJobLines {
-		evictedLine = m.jobLines[0]
+		evictedLine = m.cur.lines[0]
 	}
-	appendJobLine(&m.jobLines, &m.jobEvicted, text)
-	if len(m.jobLines) == oldLen && m.viewing && !m.follow {
+	appendJobLine(&m.cur.lines, &m.cur.evicted, text)
+	if len(m.cur.lines) == oldLen && m.viewing && !m.follow {
 		h := lipgloss.Height(lipgloss.NewStyle().Width(m.vpWidth()).Render(evictedLine))
 		m.vp.SetYOffset(m.vp.YOffset - h)
 	}
@@ -840,14 +815,14 @@ func appendJobLine(lines *[]string, evicted *int, text string) {
 // jobContent renders the interleaved stream wrapped to w columns. Line numbers
 // in the context line refer to these wrapped display lines.
 func (m model) jobContent(w int) string {
-	if len(m.jobLines) == 0 {
+	if len(m.cur.lines) == 0 {
 		return lipgloss.NewStyle().Width(w).Render(faintStyle.Render("(no output yet)"))
 	}
 	return lipgloss.NewStyle().Width(w).Render(m.jobOutput())
 }
 
 func (m model) jobOutput() string {
-	return strings.Join(m.jobLines, "\n")
+	return strings.Join(m.cur.lines, "\n")
 }
 
 // refreshViewport resizes and re-renders the open viewport, sticking to the
@@ -952,7 +927,7 @@ func (m model) View() string {
 		// The forms cheatsheet yields first: drop it when the view would
 		// overflow, or when it would starve a live job pane below jobView's
 		// 5-row minimum. m.height == 0 means size unknown — keep the forms.
-		hasJob := m.activeJob != nil || m.jobStatus != JobQueued
+		hasJob := m.cur.active != nil || m.cur.status != JobQueued
 		if avail < 0 || (hasJob && avail < 5) {
 			tail = m.promptView(false) + "\n"
 			avail = m.height - strings.Count(fixed, "\n") - strings.Count(tail, "\n") - 1
@@ -964,7 +939,7 @@ func (m model) View() string {
 		avail = m.height - strings.Count(fixed, "\n") - strings.Count(tail, "\n") - 1
 	}
 	job := m.jobView(avail)
-	if m.networkMap && m.jobName == lanDiscoveryName {
+	if m.networkMap && m.cur.name == lanDiscoveryName {
 		job = ""
 	}
 	return fixed + job + tail
@@ -1053,7 +1028,7 @@ func (m model) bodyView(deferred bool) string {
 func (m model) networkHosts() []string {
 	source, _ := m.discoveryNetwork()
 	var hosts []string
-	for _, line := range m.jobLines {
+	for _, line := range m.cur.lines {
 		host, ok := strings.CutPrefix(line, "Host: ")
 		if !ok {
 			continue
@@ -1132,11 +1107,11 @@ func (m model) networkMapView() string {
 	}
 	if len(hosts) == 0 {
 		switch {
-		case m.activeJob != nil:
+		case m.cur.active != nil:
 			b.WriteString(m.spinner.View() + faintStyle.Render(" discovering devices…") + "\n")
-		case m.jobStatus != JobDone:
-			b.WriteString(failStyle.Render("└─ Discovery "+m.jobStatus.String()) + "\n")
-		case m.jobStatus == JobDone:
+		case m.cur.status != JobDone:
+			b.WriteString(failStyle.Render("└─ Discovery "+m.cur.status.String()) + "\n")
+		case m.cur.status == JobDone:
 			b.WriteString(faintStyle.Render("└─ No other devices replied") + "\n")
 		}
 	}
@@ -1228,7 +1203,7 @@ func (m model) promptView(withForms bool) string {
 func (m model) helpView(deferred bool) string {
 	// Enter opens the output viewer whenever a job pane exists (same condition
 	// as jobView), so the hint tracks exactly when the key does something.
-	hasJob := m.activeJob != nil || m.jobStatus != JobQueued
+	hasJob := m.cur.active != nil || m.cur.status != JobQueued
 	if deferred {
 		if m.networkMap {
 			kv := []string{"v", "checks"}
@@ -1376,17 +1351,17 @@ func styled(s fmt.Stringer) string {
 // output viewer: a live spinner + timer while running, the total duration
 // once the job has finished.
 func (m model) jobStatusLine() string {
-	s := faintStyle.Render(m.jobName+" — ") + styled(m.jobStatus)
+	s := faintStyle.Render(m.cur.name+" — ") + styled(m.cur.status)
 	if len(m.otherJobs) > 0 {
 		s += faintStyle.Render(fmt.Sprintf(" · %d jobs · tab to switch", len(m.otherJobs)+1))
 	}
-	if m.activeJob != nil {
-		return s + " " + m.spinner.View() + faintStyle.Render(fmt.Sprintf(" %.0fs", time.Since(m.jobStart).Seconds()))
+	if m.cur.active != nil {
+		return s + " " + m.spinner.View() + faintStyle.Render(fmt.Sprintf(" %.0fs", time.Since(m.cur.start).Seconds()))
 	}
-	if m.jobDur > 0 && m.jobDur < time.Second {
-		s += faintStyle.Render(fmt.Sprintf(" · %dms", m.jobDur.Milliseconds()))
-	} else if m.jobDur >= time.Second {
-		s += faintStyle.Render(fmt.Sprintf(" · %.0fs", m.jobDur.Seconds()))
+	if m.cur.dur > 0 && m.cur.dur < time.Second {
+		s += faintStyle.Render(fmt.Sprintf(" · %dms", m.cur.dur.Milliseconds()))
+	} else if m.cur.dur >= time.Second {
+		s += faintStyle.Render(fmt.Sprintf(" · %.0fs", m.cur.dur.Seconds()))
 	}
 	return s
 }
@@ -1394,7 +1369,7 @@ func (m model) jobStatusLine() string {
 // outputView is the full-screen scrollable output viewer (Enter).
 func (m model) outputView() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("$ "+m.jobDisplay) + "\n")
+	b.WriteString(titleStyle.Render("$ "+m.cur.display) + "\n")
 	b.WriteString(m.jobStatusLine() + "\n")
 	b.WriteString(m.vp.View() + "\n")
 	b.WriteString(faintStyle.Render(m.vpContext()) + "\n")
@@ -1426,13 +1401,13 @@ func (m model) vpContext() string {
 		top = bot
 	}
 	s := fmt.Sprintf("lines %d–%d of %d", top, bot, total)
-	if m.jobEvicted > 0 {
-		s += fmt.Sprintf(" · %d older lines discarded", m.jobEvicted)
+	if m.cur.evicted > 0 {
+		s += fmt.Sprintf(" · %d older lines discarded", m.cur.evicted)
 	}
-	if m.jobDropped > 0 {
-		s += fmt.Sprintf(" · %d dropped (channel overflow)", m.jobDropped)
+	if m.cur.dropped > 0 {
+		s += fmt.Sprintf(" · %d dropped (channel overflow)", m.cur.dropped)
 	}
-	if m.activeJob != nil {
+	if m.cur.active != nil {
 		if m.follow {
 			s += " · following"
 		} else {
@@ -1472,7 +1447,7 @@ func (m model) toolboxView() string {
 // jobView renders the job pane with an adaptive tail: avail is the screen
 // height left over for this pane; unknown height falls back to jobTailLines.
 func (m model) jobView(avail int) string {
-	if m.activeJob == nil && m.jobStatus == JobQueued {
+	if m.cur.active == nil && m.cur.status == JobQueued {
 		return ""
 	}
 	if m.height > 0 && avail < 5 {
@@ -1487,24 +1462,24 @@ func (m model) jobView(avail int) string {
 	}
 	var b strings.Builder
 	b.WriteString(faintStyle.Render(strings.Repeat("─", m.vpWidth())) + "\n")
-	b.WriteString(titleStyle.Render("$ "+m.jobDisplay) + "\n")
+	b.WriteString(titleStyle.Render("$ "+m.cur.display) + "\n")
 	b.WriteString(m.jobStatusLine() + "\n")
 
-	shown := m.jobLines
+	shown := m.cur.lines
 	if len(shown) > tailN {
 		shown = shown[len(shown)-tailN:]
 	}
 	for _, ln := range shown {
 		b.WriteString(ln + "\n")
 	}
-	older := len(m.jobLines) - len(shown) + m.jobEvicted
-	if older > 0 || m.jobDropped > 0 {
+	older := len(m.cur.lines) - len(shown) + m.cur.evicted
+	if older > 0 || m.cur.dropped > 0 {
 		var notes []string
 		if older > 0 {
 			notes = append(notes, fmt.Sprintf("… %d earlier lines — enter to scroll", older))
 		}
-		if m.jobDropped > 0 {
-			notes = append(notes, fmt.Sprintf("%d dropped (channel overflow)", m.jobDropped))
+		if m.cur.dropped > 0 {
+			notes = append(notes, fmt.Sprintf("%d dropped (channel overflow)", m.cur.dropped))
 		}
 		b.WriteString(faintStyle.Render("("+strings.Join(notes, " · ")+")") + "\n")
 	}

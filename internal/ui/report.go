@@ -106,13 +106,13 @@ func (m model) report() string {
 			fmt.Fprintf(&b, "        attempt: %s %dms %s\n", a.IP, a.Dur.Milliseconds(), st)
 		}
 	}
-	if len(m.jobLines) > 0 {
+	if len(m.cur.lines) > 0 {
 		const reportTailLines = 15
-		lines := m.jobLines
+		lines := m.cur.lines
 		if len(lines) > reportTailLines {
 			lines = lines[len(lines)-reportTailLines:]
 		}
-		fmt.Fprintf(&b, "\ntool output ($ %s):\n", textsafe.Clean(m.jobDisplay))
+		fmt.Fprintf(&b, "\ntool output ($ %s):\n", textsafe.Clean(m.cur.display))
 		for _, line := range lines {
 			b.WriteString("  " + textsafe.Clean(line) + "\n")
 		}

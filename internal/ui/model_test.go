@@ -43,7 +43,7 @@ func TestFixShortcutRemoved(t *testing.T) {
 	doneResults(&m, diagnostic.ProbeDNS)
 	u, cmd := m.Update(keyMsg("f"))
 	nm := asModel(t, u)
-	if cmd != nil || nm.activeJob != nil || nm.pending != nil {
+	if cmd != nil || nm.cur.active != nil || nm.pending != nil {
 		t.Error("f must not launch or defer an automatic fix")
 	}
 }
@@ -71,13 +71,13 @@ func TestNetworkMapToggle(t *testing.T) {
 
 	u, _ := m.Update(keyMsg("v"))
 	nm := asModel(t, u)
-	if nm.confirmTool != nil || nm.jobName != lanDiscoveryName || nm.jobStatus == JobQueued || !nm.networkMap || nm.networkCIDR != "192.168.12.0/24" || !strings.Contains(nm.View(), "LAN scan") {
+	if nm.confirmTool != nil || nm.cur.name != lanDiscoveryName || nm.cur.status == JobQueued || !nm.networkMap || nm.networkCIDR != "192.168.12.0/24" || !strings.Contains(nm.View(), "LAN scan") {
 		t.Fatalf("v must immediately run the LAN scan on the local /24:\n%s", nm.View())
 	}
 
-	nm.activeJob = nil
-	nm.jobName, nm.jobStatus = lanDiscoveryName, JobDone
-	nm.jobLines = []string{
+	nm.cur.active = nil
+	nm.cur.name, nm.cur.status = lanDiscoveryName, JobDone
+	nm.cur.lines = []string{
 		"Host: 192.168.12.1 (router.lan.example)\tStatus: Up",
 		"Host: 192.168.12.50 (living-room-tv.lan.example)\tStatus: Up",
 		"Host: 192.168.12.51 ()\tStatus: Up",
@@ -92,7 +92,7 @@ func TestNetworkMapToggle(t *testing.T) {
 		}
 	}
 
-	nm.jobLines = append(nm.jobLines, "Host: 192.168.12.52 (printer.office.example)\tStatus: Up")
+	nm.cur.lines = append(nm.cur.lines, "Host: 192.168.12.52 (printer.office.example)\tStatus: Up")
 	view = nm.View()
 	if !strings.Contains(view, "router.lan.example") || !strings.Contains(view, "living-room-tv.lan.example") || !strings.Contains(view, "printer.office.example") || strings.Contains(view, "Domain:") {
 		t.Fatalf("mixed domains must remain visible in the network map:\n%s", view)
@@ -109,8 +109,8 @@ func TestNetworkMapSelectsNewTarget(t *testing.T) {
 	m := newModel(mustTarget(t, "example.com:22"), false)
 	m.networkMap = true
 	m.networkCIDR = "192.168.12.0/24"
-	m.jobName, m.jobStatus = lanDiscoveryName, JobDone
-	m.jobLines = []string{
+	m.cur.name, m.cur.status = lanDiscoveryName, JobDone
+	m.cur.lines = []string{
 		"Host: 192.168.12.1 (router.lan)\tStatus: Up",
 		"Host: 192.168.12.50 (printer.lan)\tStatus: Up",
 	}
@@ -163,7 +163,7 @@ func TestNmapConfirmGate(t *testing.T) {
 	if nm.confirmTool == nil || nm.confirmTool.Key != "n" {
 		t.Fatal("n must open the confirm gate for nmap")
 	}
-	if nm.activeJob != nil || cmd != nil {
+	if nm.cur.active != nil || cmd != nil {
 		t.Error("confirm gate must not launch a job yet")
 	}
 	if !strings.Contains(nm.View(), "nmap ") {
@@ -174,7 +174,7 @@ func TestNmapConfirmGate(t *testing.T) {
 	if nm.confirmTool != nil {
 		t.Error("ctrl+c must close the confirm gate")
 	}
-	if nm.activeJob != nil {
+	if nm.cur.active != nil {
 		t.Error("ctrl+c must not launch a scan")
 	}
 }
@@ -185,8 +185,8 @@ func TestRestartResets(t *testing.T) {
 	m := newModel(nil, false)
 	m.results[diagnostic.ProbeIface] = diagnostic.ProbeResult{Status: diagnostic.StatusPass}
 	m.started[diagnostic.ProbeIface] = true
-	m.jobStatus, m.jobName, m.jobDisplay, m.jobDur = JobDone, "ping", "ping example.com", 1
-	m.jobLines = []string{"reply from example.com"}
+	m.cur.status, m.cur.name, m.cur.display, m.cur.dur = JobDone, "ping", "ping example.com", 1
+	m.cur.lines = []string{"reply from example.com"}
 	gen0 := m.generation
 	u, _ := m.Update(keyMsg("r"))
 	nm := asModel(t, u)
@@ -207,7 +207,7 @@ func TestRestartResets(t *testing.T) {
 	if nm.ctx != nil {
 		t.Error("restart must reset ctx to nil")
 	}
-	if nm.jobStatus != JobQueued || nm.jobName != "" || nm.jobDisplay != "" || nm.jobDur != 0 || len(nm.jobLines) != 0 {
+	if nm.cur.status != JobQueued || nm.cur.name != "" || nm.cur.display != "" || nm.cur.dur != 0 || len(nm.cur.lines) != 0 {
 		t.Error("restart must clear the previous job")
 	}
 	if pane := nm.jobView(10); pane != "" {
@@ -344,7 +344,7 @@ func TestQuit(t *testing.T) {
 
 func TestViewerEscAndQGoBack(t *testing.T) {
 	m := newModel(nil, false)
-	m.jobStatus = JobDone
+	m.cur.status = JobDone
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	nm := asModel(t, u)
 	if got := nm.View(); !strings.Contains(got, keyStyle.Render("esc/q")) {
@@ -375,8 +375,8 @@ func TestViewerCopiesFullOutput(t *testing.T) {
 	}
 
 	m := newModel(nil, false)
-	m.jobStatus = JobDone
-	m.jobLines = []string{"first", "second"}
+	m.cur.status = JobDone
+	m.cur.lines = []string{"first", "second"}
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	nm := asModel(t, u)
 	if !strings.Contains(nm.View(), keyStyle.Render("y")) {
@@ -400,8 +400,8 @@ func TestTabSwitchNotice(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newModel(nil, false)
-			m.jobName, m.jobDisplay, m.jobStatus = "current tool", "current", JobDone
-			m.jobLines = []string{"current output"}
+			m.cur.name, m.cur.display, m.cur.status = "current tool", "current", JobDone
+			m.cur.lines = []string{"current output"}
 			m.otherJobs = []jobState{{name: "next tool", display: "next", status: JobDone, lines: []string{"next output"}}}
 			m.networkMap = true
 			u, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 24})
@@ -445,7 +445,7 @@ func TestTabSwitchNotice(t *testing.T) {
 func TestCtrlCWarnsThenQuits(t *testing.T) {
 	m := newModel(nil, false)
 	canceled := false
-	m.activeJob = &job{cancel: func() { canceled = true }}
+	m.cur.active = &job{cancel: func() { canceled = true }}
 
 	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	nm := asModel(t, u)
@@ -467,7 +467,7 @@ func TestCtrlCWarnsThenQuits(t *testing.T) {
 		t.Error("quit hint must clear after the timeout")
 	}
 
-	nm.activeJob = nil
+	nm.cur.active = nil
 	u, cmd = nm.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	_ = asModel(t, u)
 	if cmd == nil {
@@ -582,8 +582,8 @@ func TestBatchedRunesReplayed(t *testing.T) {
 // has arrived (e.g. mtr --report buffers everything until exit).
 func TestEnterViewerBeforeOutput(t *testing.T) {
 	m := newModel(mustTarget(t, "example.com:443"), false)
-	m.activeJob = &job{}
-	m.jobStatus = JobRunning
+	m.cur.active = &job{}
+	m.cur.status = JobRunning
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	nm := asModel(t, u)
 	if !nm.viewing {
@@ -599,10 +599,10 @@ func TestEnterViewerBeforeOutput(t *testing.T) {
 // whole UI scrolling.
 func TestViewFitsTerminal(t *testing.T) {
 	m := newModel(mustTarget(t, "example.com:443"), false)
-	m.jobStatus = JobRunning
-	m.jobDisplay = "ping example.com"
+	m.cur.status = JobRunning
+	m.cur.display = "ping example.com"
 	for range 200 {
-		m.jobLines = append(m.jobLines, "reply from 1.2.3.4")
+		m.cur.lines = append(m.cur.lines, "reply from 1.2.3.4")
 	}
 	for _, size := range []tea.WindowSizeMsg{
 		{Width: 120, Height: 40},
@@ -668,10 +668,10 @@ func TestPromptFormsDroppedWhenShort(t *testing.T) {
 // height where they would squeeze avail to 1-4 rows, the pane wins.
 func TestPromptFormsYieldToJobPane(t *testing.T) {
 	m := newModel(mustTarget(t, "example.com:443"), false)
-	m.jobStatus = JobRunning
-	m.jobDisplay = "ping example.com"
+	m.cur.status = JobRunning
+	m.cur.display = "ping example.com"
 	for range 200 {
-		m.jobLines = append(m.jobLines, "reply from 1.2.3.4")
+		m.cur.lines = append(m.cur.lines, "reply from 1.2.3.4")
 	}
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	nm := asModel(t, u)

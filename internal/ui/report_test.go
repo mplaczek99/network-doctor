@@ -97,14 +97,14 @@ func TestReportSanitized(t *testing.T) {
 		},
 	}
 	for i := 0; i < 16; i++ {
-		m.jobLines = append(m.jobLines, fmt.Sprintf("line %02d", i))
+		m.cur.lines = append(m.cur.lines, fmt.Sprintf("line %02d", i))
 	}
-	m.jobLines = append(m.jobLines,
+	m.cur.lines = append(m.cur.lines,
 		"ssh banner on stderr",
 		"result 200\x1b[31m",
 	)
-	m.jobStatus = JobDone
-	m.jobDisplay = "curl https://example.com"
+	m.cur.status = JobDone
+	m.cur.display = "curl https://example.com"
 
 	rep := m.report()
 	for _, want := range []string{
@@ -160,9 +160,9 @@ func TestReportVerdictPass(t *testing.T) {
 
 func TestReportIncludesTimedOutToolOutput(t *testing.T) {
 	m := newModel(nil, false)
-	m.jobStatus = JobTimedOut
-	m.jobDisplay = "ping example.com"
-	m.jobLines = []string{"reply before timeout"}
+	m.cur.status = JobTimedOut
+	m.cur.display = "ping example.com"
+	m.cur.lines = []string{"reply before timeout"}
 
 	if rep := m.report(); !strings.Contains(rep, "tool output ($ ping example.com):\n  reply before timeout") {
 		t.Errorf("timed-out tool output missing from report:\n%s", rep)
@@ -171,8 +171,8 @@ func TestReportIncludesTimedOutToolOutput(t *testing.T) {
 
 func TestRestartClearsToolOutputFromReport(t *testing.T) {
 	m := newModel(mustTarget(t, "example.com"), false)
-	m.jobDisplay = "ping old.example"
-	m.jobLines = []string{"reply from old.example"}
+	m.cur.display = "ping old.example"
+	m.cur.lines = []string{"reply from old.example"}
 	m.doRestart()
 
 	if rep := m.report(); strings.Contains(rep, "old.example") {

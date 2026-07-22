@@ -23,22 +23,22 @@ func TestAppendJobLine(t *testing.T) {
 	for i := 0; i < maxJobLines+50; i++ {
 		m.appendJobLine("x")
 	}
-	if len(m.jobLines) != maxJobLines {
-		t.Errorf("len = %d, want cap %d", len(m.jobLines), maxJobLines)
+	if len(m.cur.lines) != maxJobLines {
+		t.Errorf("len = %d, want cap %d", len(m.cur.lines), maxJobLines)
 	}
 	// Ring evictions are counted separately from channel-overflow drops.
-	if m.jobEvicted != 50 {
-		t.Errorf("jobEvicted = %d, want 50", m.jobEvicted)
+	if m.cur.evicted != 50 {
+		t.Errorf("jobEvicted = %d, want 50", m.cur.evicted)
 	}
-	if m.jobDropped != 0 {
-		t.Errorf("jobDropped = %d, want 0 — evictions must not touch it", m.jobDropped)
+	if m.cur.dropped != 0 {
+		t.Errorf("jobDropped = %d, want 0 — evictions must not touch it", m.cur.dropped)
 	}
 	m.appendJobLine("newest")
-	if last := m.jobLines[len(m.jobLines)-1]; last != "newest" {
+	if last := m.cur.lines[len(m.cur.lines)-1]; last != "newest" {
 		t.Errorf("last = %q, want newest line kept", last)
 	}
-	if len(m.jobLines) != maxJobLines || m.jobEvicted != 51 {
-		t.Errorf("len=%d evicted=%d, want %d and 51", len(m.jobLines), m.jobEvicted, maxJobLines)
+	if len(m.cur.lines) != maxJobLines || m.cur.evicted != 51 {
+		t.Errorf("len=%d evicted=%d, want %d and 51", len(m.cur.lines), m.cur.evicted, maxJobLines)
 	}
 }
 
@@ -136,7 +136,7 @@ func TestJobStatusString(t *testing.T) {
 
 func TestJobStatusLineShowsMilliseconds(t *testing.T) {
 	m := newModel(nil, false)
-	m.jobStatus, m.jobDur = JobDone, 40*time.Millisecond
+	m.cur.status, m.cur.dur = JobDone, 40*time.Millisecond
 	if got := m.jobStatusLine(); !strings.Contains(got, "40ms") {
 		t.Errorf("jobStatusLine() = %q, want 40ms", got)
 	}
@@ -221,7 +221,7 @@ func TestDeferredQuit(t *testing.T) {
 	m := newModel(mustTarget(t, "github.com"), true)
 	m.generation = 3
 	canceled := false
-	m.activeJob = &job{id: "j", cancel: func() { canceled = true }}
+	m.cur.active = &job{id: "j", cancel: func() { canceled = true }}
 
 	u, cmd := m.Update(keyMsg("q"))
 	nm := asModel(t, u)
@@ -237,7 +237,7 @@ func TestDeferredQuit(t *testing.T) {
 
 	u2, cmd2 := nm.Update(ToolDoneMsg{JobID: "j", Generation: 3, Status: JobCanceled})
 	nm2 := asModel(t, u2)
-	if nm2.activeJob != nil {
+	if nm2.cur.active != nil {
 		t.Error("active job must clear on the terminal event")
 	}
 	if cmd2 == nil {
@@ -257,7 +257,7 @@ func TestDeferredRestart(t *testing.T) {
 	m := newModel(mustTarget(t, "github.com"), false)
 	m.generation = 3
 	canceled := false
-	m.activeJob = &job{id: "j", cancel: func() { canceled = true }}
+	m.cur.active = &job{id: "j", cancel: func() { canceled = true }}
 
 	u, _ := m.Update(keyMsg("r"))
 	nm := asModel(t, u)
@@ -296,7 +296,7 @@ func TestDeferredRestartDefersTargetSwap(t *testing.T) {
 	}
 	m.generation = 3
 	canceled := false
-	m.activeJob = &job{id: "j", cancel: func() { canceled = true }}
+	m.cur.active = &job{id: "j", cancel: func() { canceled = true }}
 
 	u, _ := m.Update(keyMsg("r"))
 	nm := asModel(t, u)
@@ -336,8 +336,8 @@ func TestConcurrentToolsCanSwitch(t *testing.T) {
 	m := newModel(mustTarget(t, "github.com"), false)
 	m.generation = 1
 	canceled := false
-	m.activeJob = &job{id: "first", ch: make(chan tea.Msg, 1), cancel: func() { canceled = true }}
-	m.jobStatus, m.jobName, m.jobDisplay = JobRunning, "first tool", "first"
+	m.cur.active = &job{id: "first", ch: make(chan tea.Msg, 1), cancel: func() { canceled = true }}
+	m.cur.status, m.cur.name, m.cur.display = JobRunning, "first tool", "first"
 	m.tools = []Tool{{
 		Key: "z", Name: "second tool", Bin: os.Args[0], available: true,
 		Build: func(*diagnostic.Target) ([]string, []string, string) {
@@ -349,10 +349,10 @@ func TestConcurrentToolsCanSwitch(t *testing.T) {
 
 	u, cmd := m.Update(keyMsg("z"))
 	nm := asModel(t, u)
-	if cmd == nil || nm.activeJob == nil || nm.activeJob.id == "first" {
+	if cmd == nil || nm.cur.active == nil || nm.cur.active.id == "first" {
 		t.Fatal("second tool must start immediately")
 	}
-	second := nm.activeJob
+	second := nm.cur.active
 	if canceled || nm.pending != nil || len(nm.otherJobs) != 1 || nm.otherJobs[0].active.id != "first" {
 		t.Fatalf("first tool was not preserved (canceled=%v pending=%v other=%+v)", canceled, nm.pending, nm.otherJobs)
 	}
@@ -368,8 +368,8 @@ func TestConcurrentToolsCanSwitch(t *testing.T) {
 
 	u, _ = nm.Update(tea.KeyMsg{Type: tea.KeyTab})
 	nm = asModel(t, u)
-	if nm.activeJob == nil || nm.activeJob.id != "first" || nm.jobLines[0] != "still running" {
-		t.Fatalf("Tab selected job %q with lines %v, want first job", nm.activeJob.id, nm.jobLines)
+	if nm.cur.active == nil || nm.cur.active.id != "first" || nm.cur.lines[0] != "still running" {
+		t.Fatalf("Tab selected job %q with lines %v, want first job", nm.cur.active.id, nm.cur.lines)
 	}
 
 	second.cancel()
@@ -378,7 +378,7 @@ func TestConcurrentToolsCanSwitch(t *testing.T) {
 
 func TestTabPreservesArmedQuit(t *testing.T) {
 	m := newModel(nil, false)
-	m.jobName, m.jobStatus = "current tool", JobDone
+	m.cur.name, m.cur.status = "current tool", JobDone
 	m.otherJobs = []jobState{{name: "next tool", status: JobDone}}
 
 	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
@@ -386,8 +386,8 @@ func TestTabPreservesArmedQuit(t *testing.T) {
 	deadline := nm.noticeDeadline
 	u, cmd := nm.Update(tea.KeyMsg{Type: tea.KeyTab})
 	nm = asModel(t, u)
-	if cmd != nil || nm.jobName != "next tool" || nm.notice != ctrlCNotice || !nm.noticeDeadline.Equal(deadline) {
-		t.Fatalf("Tab changed armed quit: job=%q notice=%q deadline=%v cmd nil=%v", nm.jobName, nm.notice, nm.noticeDeadline, cmd == nil)
+	if cmd != nil || nm.cur.name != "next tool" || nm.notice != ctrlCNotice || !nm.noticeDeadline.Equal(deadline) {
+		t.Fatalf("Tab changed armed quit: job=%q notice=%q deadline=%v cmd nil=%v", nm.cur.name, nm.notice, nm.noticeDeadline, cmd == nil)
 	}
 
 	_, cmd = nm.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
@@ -412,12 +412,12 @@ func TestTabWithoutOtherJobsDoesNothing(t *testing.T) {
 func TestToolOutputRouting(t *testing.T) {
 	m := newModel(nil, false)
 	m.generation = 1
-	m.activeJob = &job{id: "j", ch: make(chan tea.Msg, 1)}
+	m.cur.active = &job{id: "j", ch: make(chan tea.Msg, 1)}
 
 	u, cmd := m.Update(ToolOutputMsg{JobID: "j", Generation: 1, Line: "hello"})
 	nm := asModel(t, u)
-	if len(nm.jobLines) != 1 || nm.jobLines[0] != "hello" {
-		t.Errorf("jobLines = %v, want [hello]", nm.jobLines)
+	if len(nm.cur.lines) != 1 || nm.cur.lines[0] != "hello" {
+		t.Errorf("jobLines = %v, want [hello]", nm.cur.lines)
 	}
 	if cmd == nil {
 		t.Error("an accepted output line must reissue waitForMsg")
@@ -427,15 +427,15 @@ func TestToolOutputRouting(t *testing.T) {
 	u, _ = asModel(t, u).Update(ToolOutputMsg{JobID: "j", Generation: 1, Line: "world"})
 	nm = asModel(t, u)
 	want := []string{"hello", "oops", "world"}
-	if len(nm.jobLines) != 3 || nm.jobLines[1] != want[1] || nm.jobLines[2] != want[2] {
-		t.Errorf("jobLines = %v, want interleaved %v", nm.jobLines, want)
+	if len(nm.cur.lines) != 3 || nm.cur.lines[1] != want[1] || nm.cur.lines[2] != want[2] {
+		t.Errorf("jobLines = %v, want interleaved %v", nm.cur.lines, want)
 	}
 
 	// Stale generation → ignored.
 	u, cmd = nm.Update(ToolOutputMsg{JobID: "j", Generation: 99, Line: "nope"})
 	nm = asModel(t, u)
-	if len(nm.jobLines) != 3 {
-		t.Errorf("stale output must be dropped, jobLines = %v", nm.jobLines)
+	if len(nm.cur.lines) != 3 {
+		t.Errorf("stale output must be dropped, jobLines = %v", nm.cur.lines)
 	}
 	if cmd != nil {
 		t.Error("stale output must issue no cmd")
@@ -446,10 +446,10 @@ func TestToolOutputRouting(t *testing.T) {
 func TestStaleToolDoneDropped(t *testing.T) {
 	m := newModel(nil, false)
 	m.generation = 2
-	m.activeJob = &job{id: "j", cancel: func() {}}
+	m.cur.active = &job{id: "j", cancel: func() {}}
 	u, cmd := m.Update(ToolDoneMsg{JobID: "other", Generation: 2, Status: JobDone})
 	nm := asModel(t, u)
-	if nm.activeJob == nil {
+	if nm.cur.active == nil {
 		t.Error("a mismatched-id terminal event must not clear the active job")
 	}
 	if cmd != nil {
@@ -482,12 +482,12 @@ func TestToolboxLaunchBeforeRun(t *testing.T) {
 		}}
 	cmd := (&m).launchTool(tool) // must not panic
 	if cmd == nil {
-		t.Fatalf("launchTool returned no cmd (jobLines=%v)", m.jobLines)
+		t.Fatalf("launchTool returned no cmd (jobLines=%v)", m.cur.lines)
 	}
 	if m.ctx == nil {
 		t.Fatal("launchTool must lazily initialize the context")
 	}
-	_, done := drain(t, m.activeJob.ch)
+	_, done := drain(t, m.cur.active.ch)
 	if done.Status != JobDone {
 		t.Errorf("status = %v, want JobDone", done.Status)
 	}
@@ -497,8 +497,8 @@ func TestToolboxLaunchBeforeRun(t *testing.T) {
 // launchTool on a missing binary fails gracefully with an install hint and no cmd.
 func TestLaunchToolUnavailable(t *testing.T) {
 	m := newModel(nil, false)
-	m.jobDropped = 7
-	m.jobEvicted = 9
+	m.cur.dropped = 7
+	m.cur.evicted = 9
 	tool := Tool{
 		Key: "z", Name: "nope", Bin: "network-doctor-no-such-binary-xyz",
 		Build: func(*diagnostic.Target) ([]string, []string, string) { return nil, nil, "nope" },
@@ -507,21 +507,21 @@ func TestLaunchToolUnavailable(t *testing.T) {
 	if cmd != nil {
 		t.Error("a missing binary must not spawn anything")
 	}
-	if m.jobStatus != JobFailed {
-		t.Errorf("status = %v, want JobFailed", m.jobStatus)
+	if m.cur.status != JobFailed {
+		t.Errorf("status = %v, want JobFailed", m.cur.status)
 	}
-	if len(m.jobLines) == 0 || !strings.Contains(m.jobLines[0], "not found") {
-		t.Errorf("jobLines = %v, want a 'not found' hint", m.jobLines)
+	if len(m.cur.lines) == 0 || !strings.Contains(m.cur.lines[0], "not found") {
+		t.Errorf("jobLines = %v, want a 'not found' hint", m.cur.lines)
 	}
-	if m.jobDropped != 0 || m.jobEvicted != 0 {
-		t.Errorf("jobDropped/jobEvicted = %d/%d, want 0/0", m.jobDropped, m.jobEvicted)
+	if m.cur.dropped != 0 || m.cur.evicted != 0 {
+		t.Errorf("jobDropped/jobEvicted = %d/%d, want 0/0", m.cur.dropped, m.cur.evicted)
 	}
 }
 
 func TestLaunchToolStartErrorClearsPreviousJobState(t *testing.T) {
 	m := newModel(nil, false)
-	m.jobDropped = 7
-	m.jobEvicted = 9
+	m.cur.dropped = 7
+	m.cur.evicted = 9
 	name := "bad-tool"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
@@ -538,17 +538,17 @@ func TestLaunchToolStartErrorClearsPreviousJobState(t *testing.T) {
 	if cmd != nil {
 		t.Error("a start error must not return a running job command")
 	}
-	if m.jobStatus != JobFailed {
-		t.Errorf("status = %v, want JobFailed", m.jobStatus)
+	if m.cur.status != JobFailed {
+		t.Errorf("status = %v, want JobFailed", m.cur.status)
 	}
-	if m.jobDisplay != "bad-tool --display" {
-		t.Errorf("jobDisplay = %q, want built display string", m.jobDisplay)
+	if m.cur.display != "bad-tool --display" {
+		t.Errorf("jobDisplay = %q, want built display string", m.cur.display)
 	}
-	if len(m.jobLines) == 0 {
-		t.Errorf("jobLines = %v, want an error line", m.jobLines)
+	if len(m.cur.lines) == 0 {
+		t.Errorf("jobLines = %v, want an error line", m.cur.lines)
 	}
-	if m.jobDropped != 0 || m.jobEvicted != 0 {
-		t.Errorf("jobDropped/jobEvicted = %d/%d, want 0/0", m.jobDropped, m.jobEvicted)
+	if m.cur.dropped != 0 || m.cur.evicted != 0 {
+		t.Errorf("jobDropped/jobEvicted = %d/%d, want 0/0", m.cur.dropped, m.cur.evicted)
 	}
 }
 
@@ -569,8 +569,8 @@ func TestViewRenders(t *testing.T) {
 	}
 
 	job := newModel(mustTarget(t, "github.com"), false)
-	job.jobStatus, job.jobName, job.jobDisplay = JobDone, "ping", "ping github.com"
-	job.jobLines = []string{"64 bytes from ..."}
+	job.cur.status, job.cur.name, job.cur.display = JobDone, "ping", "ping github.com"
+	job.cur.lines = []string{"64 bytes from ..."}
 	if !strings.Contains(job.View(), "$ ping github.com") {
 		t.Error("job view must show the command line")
 	}
@@ -588,7 +588,7 @@ func TestViewportFollow(t *testing.T) {
 	m := newModel(nil, false)
 	m.width, m.height = 60, 10 // wrapped footer leaves 5 viewport rows
 	m.generation = 1
-	m.activeJob = &job{id: "j", ch: make(chan tea.Msg, 1)}
+	m.cur.active = &job{id: "j", ch: make(chan tea.Msg, 1)}
 	var u tea.Model = m
 	for i := 0; i < 20; i++ {
 		u, _ = asModel(t, u).Update(ToolOutputMsg{JobID: "j", Generation: 1, Line: fmt.Sprintf("line %d", i)})
@@ -641,11 +641,11 @@ func TestViewportEvictionKeepsPausedReader(t *testing.T) {
 	m := newModel(nil, false)
 	m.width, m.height = 20, 10
 	m.generation = 1
-	m.activeJob = &job{id: "j", ch: make(chan tea.Msg, 1)}
-	m.jobLines = make([]string, maxJobLines)
-	m.jobLines[0] = strings.Repeat("x", m.width+1) // two display rows
+	m.cur.active = &job{id: "j", ch: make(chan tea.Msg, 1)}
+	m.cur.lines = make([]string, maxJobLines)
+	m.cur.lines[0] = strings.Repeat("x", m.width+1) // two display rows
 	for i := 1; i < maxJobLines; i++ {
-		m.jobLines[i] = fmt.Sprintf("line %d", i)
+		m.cur.lines[i] = fmt.Sprintf("line %d", i)
 	}
 	m.viewing, m.follow = true, false
 	m.refreshViewport()
