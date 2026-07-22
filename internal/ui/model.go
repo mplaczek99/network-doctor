@@ -1105,7 +1105,7 @@ func (m model) networkMapView() string {
 			b.WriteString(m.spinner.View() + faintStyle.Render(" discovering devices…") + "\n")
 		case m.cur.status != JobDone:
 			b.WriteString(failStyle.Render("└─ Discovery "+m.cur.status.String()) + "\n")
-		case m.cur.status == JobDone:
+		default:
 			b.WriteString(faintStyle.Render("└─ No other devices replied") + "\n")
 		}
 	}
