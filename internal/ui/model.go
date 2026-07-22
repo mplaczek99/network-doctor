@@ -1208,8 +1208,7 @@ func (m model) helpView(deferred bool) string {
 			}
 			return helpKeys(m.width, append(kv, "r", "run the checks", "q", "quit")...)
 		}
-		view := "network map"
-		kv := []string{"r", "run the checks", "v", view}
+		kv := []string{"r", "run the checks", "v", "network map"}
 		if len(m.tools) > 0 {
 			kv = append(kv, "letter", "runs that tool")
 		}
@@ -1221,8 +1220,7 @@ func (m model) helpView(deferred bool) string {
 		}
 		return helpKeys(m.width, append(kv, "q", "quit")...)
 	}
-	view := "network map"
-	kv := []string{"↑/↓", "scroll", "v", view}
+	kv := []string{"↑/↓", "scroll", "v", "network map"}
 	if m.networkMap {
 		kv = []string{"v", "checks"}
 		if len(m.networkHosts()) > 0 {
