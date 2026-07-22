@@ -812,9 +812,10 @@ func appendJobLine(lines *[]string, evicted *int, text string) {
 	}
 }
 
-// jobContent renders the interleaved stream wrapped to w columns. Line numbers
-// in the context line refer to these wrapped display lines.
-func (m model) jobContent(w int) string {
+// jobContent renders the interleaved stream wrapped to the viewport width.
+// Line numbers in the context line refer to these wrapped display lines.
+func (m model) jobContent() string {
+	w := m.vpWidth()
 	if len(m.cur.lines) == 0 {
 		return lipgloss.NewStyle().Width(w).Render(faintStyle.Render("(no output yet)"))
 	}
@@ -831,7 +832,7 @@ func (m model) jobOutput() string {
 // cap, switch to incremental append if it ever lags.
 func (m *model) refreshViewport() {
 	m.vp.Width, m.vp.Height = m.vpWidth(), m.vpHeight()
-	m.vp.SetContent(m.jobContent(m.vpWidth()))
+	m.vp.SetContent(m.jobContent())
 	if m.follow {
 		m.vp.GotoBottom()
 	}
