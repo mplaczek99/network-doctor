@@ -116,13 +116,13 @@ func TestDNSProbeErrors(t *testing.T) {
 	ops := &netops{lookupIP: func(context.Context, string) ([]net.IP, error) {
 		return nil, errors.New("SERVFAIL")
 	}}
-	r := ops.dnsProbe("example.com", false, nil)(context.Background(), nil)
+	r := ops.dnsProbe("example.com", nil)(context.Background(), nil)
 	if r.Status != StatusFail || !strings.Contains(r.Detail, "cannot resolve example.com") || r.Fix == "" {
 		t.Errorf("lookup error = %+v, want FAIL with resolve detail and a fix", r)
 	}
 
 	ops.lookupIP = func(context.Context, string) ([]net.IP, error) { return nil, nil }
-	r = ops.dnsProbe("example.com", false, nil)(context.Background(), nil)
+	r = ops.dnsProbe("example.com", nil)(context.Background(), nil)
 	if r.Status != StatusFail || !strings.Contains(r.Detail, "no A/AAAA records") {
 		t.Errorf("empty answer = %+v, want FAIL with 'no A/AAAA records'", r)
 	}

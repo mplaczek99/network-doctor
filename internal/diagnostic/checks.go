@@ -164,13 +164,13 @@ func (o *netops) buildProbes(t *Target) []Probe {
 	if t == nil {
 		// Egress, proxy egress, and DNS are siblings: each depends only on the
 		// interface, so one failure never hides another.
-		dns := Probe{ID: ProbeDNS, Name: "DNS", Deps: []ProbeID{ProbeIface}, Run: o.dnsProbe(probeHost, false, nil)}
+		dns := Probe{ID: ProbeDNS, Name: "DNS", Deps: []ProbeID{ProbeIface}, Run: o.dnsProbe(probeHost, nil)}
 		return []Probe{iface, internet, proxy, dns}
 	}
 
 	host, port := t.Host, t.Port
 	hp := net.JoinHostPort(host, strconv.Itoa(port)) // brackets IPv6 literals
-	dns := Probe{ID: ProbeDNS, Name: "DNS " + host, Deps: []ProbeID{ProbeIface}, Run: o.dnsProbe(host, t.IsLiteral, t.IP)}
+	dns := Probe{ID: ProbeDNS, Name: "DNS " + host, Deps: []ProbeID{ProbeIface}, Run: o.dnsProbe(host, t.IP)}
 	ttcp := Probe{ID: ProbeTargetTCP, Name: "TCP " + hp, Deps: []ProbeID{ProbeDNS}, Run: o.targetTCPProbe(port)}
 	probes := []Probe{iface, internet, proxy, dns, ttcp}
 
@@ -391,10 +391,10 @@ func (o *netops) proxyProbe(ctx context.Context, _ map[ProbeID]ProbeResult) Prob
 	return r
 }
 
-func (o *netops) dnsProbe(host string, literal bool, litIP net.IP) func(context.Context, map[ProbeID]ProbeResult) ProbeResult {
+func (o *netops) dnsProbe(host string, litIP net.IP) func(context.Context, map[ProbeID]ProbeResult) ProbeResult {
 	return func(ctx context.Context, _ map[ProbeID]ProbeResult) ProbeResult {
 		var r ProbeResult
-		if literal {
+		if litIP != nil {
 			r.Status, r.Addrs, r.SelectedIP = StatusNA, []net.IP{litIP}, litIP
 			r.Detail = "literal IP " + litIP.String() + " — no DNS needed"
 			return r

@@ -84,7 +84,7 @@ func toolsFor(t *diagnostic.Target, goos string) []Tool {
 
 	if goos == "windows" {
 		tools = append(tools, staticTool(quote, "d", "DNS lookup", "nslookup", "nslookup", host))
-	} else if t.IsLiteral {
+	} else if t.IP != nil {
 		tools = append(tools, staticTool(quote, "d", "reverse DNS lookup", "dig", "dig", "+time=2", "+tries=1", "-x", host))
 	} else {
 		tools = append(tools, staticTool(quote, "d", "DNS lookup", "dig", "dig", "+time=2", "+tries=1", host))
@@ -142,7 +142,7 @@ func nmapTool(quote func([]string) string, host string) Tool {
 		Key: "n", Name: "nmap", Purpose: "port scan", Bin: "nmap", Confirm: true, Timeout: 120 * time.Second,
 		Build: func(t *diagnostic.Target) ([]string, []string, string) {
 			args := []string{"-sT", "-Pn", "--host-timeout", "110s"}
-			if t.IsLiteral && t.IP.To4() == nil {
+			if t.IP != nil && t.IP.To4() == nil {
 				args = append(args, "-6")
 			}
 			if t.PortExplicit {

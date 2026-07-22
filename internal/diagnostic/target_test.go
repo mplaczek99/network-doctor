@@ -45,8 +45,8 @@ func TestParseTarget(t *testing.T) {
 			if tg.Proto != c.proto {
 				t.Errorf("proto = %d, want %d", tg.Proto, c.proto)
 			}
-			if tg.IsLiteral != c.literal {
-				t.Errorf("literal = %v, want %v", tg.IsLiteral, c.literal)
+			if (tg.IP != nil) != c.literal {
+				t.Errorf("literal = %v, want %v", tg.IP != nil, c.literal)
 			}
 		})
 	}

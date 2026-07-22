@@ -172,7 +172,7 @@ func TestNetopsInjection(t *testing.T) {
 		t.Errorf("ifaceProbe with stubs = %+v, want PASS on fake0/FakeNet", r)
 	}
 
-	r = ops.dnsProbe("example.com", false, nil)(context.Background(), nil)
+	r = ops.dnsProbe("example.com", nil)(context.Background(), nil)
 	if r.Status != StatusPass || len(r.Addrs) != 1 || !r.Addrs[0].Equal(net.ParseIP("192.0.2.1")) {
 		t.Errorf("dnsProbe with stubs = %+v, want PASS with 192.0.2.1", r)
 	}

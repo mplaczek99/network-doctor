@@ -40,11 +40,10 @@ func (p Proto) String() string {
 type Target struct {
 	Raw          string // original CLI spelling, echoed back in the restart prompt
 	Host         string
-	IP           net.IP // set iff IsLiteral
+	IP           net.IP // non-nil iff the target is an IP literal
 	Port         int
 	Proto        Proto
 	PortExplicit bool
-	IsLiteral    bool
 }
 
 // TargetForms documents the grammar ParseTarget accepts. --help and the
@@ -129,7 +128,6 @@ func ParseTarget(raw string) (*Target, error) {
 	}
 
 	if ip := net.ParseIP(host); ip != nil {
-		t.IsLiteral = true
 		t.IP = ip
 		if v4 := ip.To4(); v4 != nil {
 			t.IP = v4
