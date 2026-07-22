@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atotto/clipboard"
 	"github.com/heymaikol/network-doctor/internal/diagnostic"
 	"github.com/heymaikol/network-doctor/internal/textsafe"
 )
@@ -49,15 +48,12 @@ func exportReport(rep string, save bool) (notice string, ok bool) {
 var (
 	reportWriteFile   = os.WriteFile
 	reportUserHomeDir = os.UserHomeDir
-	clipboardWriteAll = clipboard.WriteAll
 )
 
+// copyReport writes the OSC 52 escape to stderr, because Bubble Tea owns
+// stdout: both reach the tty, but only one of them is fighting the renderer
+// for it mid-frame.
 func copyReport(rep string) error {
-	if clipboardWriteAll(rep) == nil {
-		return nil
-	}
-	// stderr, because Bubble Tea owns stdout: both reach the tty, but only one
-	// of them is fighting the renderer for it mid-frame.
 	_, err := os.Stderr.WriteString(osc52Sequence(rep))
 	return err
 }

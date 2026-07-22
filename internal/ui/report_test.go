@@ -1,11 +1,12 @@
-// Report rendering and export: sanitization, IPv6 bracketing, clipboard and
-// OSC 52 paths, and save fallbacks.
+// Report rendering and export: sanitization, IPv6 bracketing, the OSC 52
+// copy path, and save fallbacks.
 
 package ui
 
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -16,17 +17,36 @@ import (
 	"github.com/heymaikol/network-doctor/internal/diagnostic"
 )
 
-func TestCopyReportPrefersNativeClipboard(t *testing.T) {
-	oldWriteAll := clipboardWriteAll
-	t.Cleanup(func() { clipboardWriteAll = oldWriteAll })
-	clipboardWriteAll = func(rep string) error {
-		if rep != "hello" {
-			t.Errorf("clipboard text = %q", rep)
-		}
-		return nil
+// captureStderr swaps os.Stderr for a pipe and returns a func that restores
+// it and yields everything written — how the tests see OSC 52 output.
+func captureStderr(t *testing.T) func() string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
 	}
+	old := os.Stderr
+	os.Stderr = w
+	return func() string {
+		os.Stderr = old
+		w.Close()
+		b, err := io.ReadAll(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+}
 
-	if notice, ok := exportReport("hello", false); !ok || notice != "report copied to clipboard" {
+func TestCopyReportWritesOSC52(t *testing.T) {
+	t.Setenv("TMUX", "")
+	done := captureStderr(t)
+
+	notice, ok := exportReport("hello", false)
+	if got, want := done(), "\x1b]52;c;aGVsbG8=\a"; got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
+	if !ok || notice != "report copied to clipboard" {
 		t.Fatalf("exportReport() = %q, %v", notice, ok)
 	}
 }

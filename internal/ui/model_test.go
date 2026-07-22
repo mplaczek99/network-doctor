@@ -366,13 +366,8 @@ func TestViewerEscAndQGoBack(t *testing.T) {
 }
 
 func TestViewerCopiesFullOutput(t *testing.T) {
-	oldWriteAll := clipboardWriteAll
-	t.Cleanup(func() { clipboardWriteAll = oldWriteAll })
-	var copied string
-	clipboardWriteAll = func(output string) error {
-		copied = output
-		return nil
-	}
+	t.Setenv("TMUX", "")
+	done := captureStderr(t)
 
 	m := newModel(nil, false)
 	m.cur.status = JobDone
@@ -385,8 +380,11 @@ func TestViewerCopiesFullOutput(t *testing.T) {
 
 	u, cmd := nm.Update(keyMsg("y"))
 	nm = asModel(t, u)
-	if copied != "first\nsecond" || cmd == nil || nm.notice != "output copied to clipboard" {
-		t.Fatalf("copied = %q, notice = %q, cmd nil = %v", copied, nm.notice, cmd == nil)
+	if got, want := done(), osc52Sequence("first\nsecond"); got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
+	if cmd == nil || nm.notice != "output copied to clipboard" {
+		t.Fatalf("notice = %q, cmd nil = %v", nm.notice, cmd == nil)
 	}
 }
 
@@ -479,9 +477,8 @@ func TestCtrlCWarnsThenQuits(t *testing.T) {
 }
 
 func TestReportNoticeExpires(t *testing.T) {
-	oldWriteAll := clipboardWriteAll
-	t.Cleanup(func() { clipboardWriteAll = oldWriteAll })
-	clipboardWriteAll = func(string) error { return nil }
+	restore := captureStderr(t)
+	defer restore()
 
 	m := newModel(nil, false)
 	doneResults(&m, "")
