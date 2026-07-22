@@ -69,7 +69,7 @@ func TestToolsForDefinitions(t *testing.T) {
 		display        string
 		lcAllEnv       bool // true: env ends with LC_ALL=C; false: env is nil
 	}
-	nmapArgs := []string{"-sT", "-T2", "-Pn", "--host-timeout", "90s", "-p-", "github.com"}
+	nmapArgs := []string{"-sT", "-Pn", "--host-timeout", "110s", "github.com"}
 	wantHost := []want{
 		{"i", "ip route", "ip", []string{"route"}, "ip route", false},
 		{"s", "ss", "ss", []string{"-tunp"}, "ss -tunp", false},
@@ -238,7 +238,7 @@ func TestNmapTool(t *testing.T) {
 		t.Error("nmap must set Confirm so the command is shown before running")
 	}
 	args, _, display := tool.Build(tgt)
-	want := []string{"-sT", "-T2", "-Pn", "--host-timeout", "90s", "-p", "8443", "example.com"}
+	want := []string{"-sT", "-Pn", "--host-timeout", "110s", "-p", "8443", "example.com"}
 	if !slices.Equal(args, want) {
 		t.Errorf("nmap explicit-port argv = %q, want %q", args, want)
 	}
@@ -247,13 +247,13 @@ func TestNmapTool(t *testing.T) {
 	}
 	allTarget := mustTarget(t, "example.com")
 	allArgs, _, _ := toolByKey(t, toolsFor(allTarget, "linux"), "n").Build(allTarget)
-	wantAll := []string{"-sT", "-T2", "-Pn", "--host-timeout", "90s", "-p-", "example.com"}
+	wantAll := []string{"-sT", "-Pn", "--host-timeout", "110s", "example.com"}
 	if !slices.Equal(allArgs, wantAll) {
 		t.Errorf("nmap implicit-port argv = %q, want %q", allArgs, wantAll)
 	}
 	v6 := mustTarget(t, "[2001:db8::1]:8443")
 	v6Args, _, _ := toolByKey(t, toolsFor(v6, "linux"), "n").Build(v6)
-	wantV6 := []string{"-sT", "-T2", "-Pn", "--host-timeout", "90s", "-6", "-p", "8443", "2001:db8::1"}
+	wantV6 := []string{"-sT", "-Pn", "--host-timeout", "110s", "-6", "-p", "8443", "2001:db8::1"}
 	if !slices.Equal(v6Args, wantV6) {
 		t.Errorf("nmap IPv6 argv = %q, want %q", v6Args, wantV6)
 	}
