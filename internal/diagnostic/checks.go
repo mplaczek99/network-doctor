@@ -387,7 +387,11 @@ func (o *netops) proxyProbe(ctx context.Context, _ map[ProbeID]ProbeResult) Prob
 	src, iface := o.pathIdentity(ctx, conn, nil, 0)
 	r.Status, r.Source, r.Iface = StatusPass, src, iface
 	r.Detail = fmt.Sprintf("proxy %s tunnels to %s:443 in %dms", addr, probeHost, rtt.Milliseconds())
-	applyDialWarnings(&r, rtt)
+	var warns []string
+	if proxyURL.User != nil && proxyURL.Scheme == "http" {
+		warns = append(warns, "credentials sent unencrypted to http:// proxy")
+	}
+	applyDialWarnings(&r, rtt, warns...)
 	return r
 }
 
@@ -576,8 +580,8 @@ func (o *netops) bannerProbe(id ProbeID, label string, port int) Probe {
 // applyDialWarnings downgrades a successful dial result to Warn when it is
 // degraded: high connect latency, sibling addresses that failed before one
 // won, or an ambiguous source interface. Notes are appended to Detail.
-func applyDialWarnings(r *ProbeResult, rtt time.Duration) {
-	var notes []string
+func applyDialWarnings(r *ProbeResult, rtt time.Duration, extra ...string) {
+	notes := extra
 	if rtt >= warnRTT {
 		notes = append(notes, fmt.Sprintf("high latency (%dms)", rtt.Milliseconds()))
 	}

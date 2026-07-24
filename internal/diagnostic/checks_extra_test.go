@@ -289,6 +289,18 @@ func TestProxyProbeConnectOK(t *testing.T) {
 	}
 }
 
+// Basic auth on an http:// proxy rides the wire in cleartext; the tunnel
+// still works, but a diagnostic tool should say so.
+func TestProxyProbeCleartextCredsWarn(t *testing.T) {
+	ops := proxyOps("http://user:pw@proxy.corp:3128", func(context.Context, string, string) (net.Conn, error) {
+		return &scriptConn{r: strings.NewReader("HTTP/1.1 200 Connection established\r\n\r\n")}, nil
+	})
+	r := ops.proxyProbe(context.Background(), nil)
+	if r.Status != StatusWarn || !strings.Contains(r.Detail, "unencrypted") {
+		t.Errorf("creds over http proxy = %+v, want WARN about unencrypted credentials", r)
+	}
+}
+
 func TestProxyProbeAuthRequired(t *testing.T) {
 	ops := proxyOps("http://proxy.corp:3128", func(context.Context, string, string) (net.Conn, error) {
 		return &scriptConn{r: strings.NewReader("HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n")}, nil
