@@ -46,9 +46,24 @@ func exportReport(rep string, save bool) (notice string, ok bool) {
 }
 
 var (
-	reportWriteFile   = os.WriteFile
+	reportWriteFile   = writeFileExcl
 	reportUserHomeDir = os.UserHomeDir
 )
+
+// writeFileExcl is os.WriteFile with O_EXCL instead of O_TRUNC: the report
+// filename is timestamped and predictable, so refusing to write through an
+// existing name (or a symlink planted at it) beats silently overwriting.
+func writeFileExcl(path string, data []byte, perm os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	if err != nil {
+		return err
+	}
+	if _, err = f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
 
 // copyReport writes the OSC 52 escape to stderr, because Bubble Tea owns
 // stdout: both reach the tty, but only one of them is fighting the renderer

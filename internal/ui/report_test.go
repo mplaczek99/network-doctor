@@ -51,6 +51,16 @@ func TestCopyReportWritesOSC52(t *testing.T) {
 	}
 }
 
+func TestWriteFileExclRefusesExisting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "report.txt")
+	if err := writeFileExcl(path, []byte("first"), 0o600); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	if err := writeFileExcl(path, []byte("second"), 0o600); err == nil {
+		t.Fatal("second write succeeded, want O_EXCL collision error")
+	}
+}
+
 func TestExportReportSavePath(t *testing.T) {
 	oldWriteFile, oldUserHomeDir := reportWriteFile, reportUserHomeDir
 	t.Cleanup(func() { reportWriteFile, reportUserHomeDir = oldWriteFile, oldUserHomeDir })
