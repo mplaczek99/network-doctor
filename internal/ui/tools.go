@@ -212,9 +212,10 @@ func curlTool(host, goos string) Tool {
 // sshTool builds a bounded SSH handshake check for the "c" slot: -v prints the
 // server's protocol banner and key exchange on stderr, BatchMode=yes forbids
 // prompts so the run never blocks on input, and a throwaway known-hosts file
-// avoids both host-key prompts and writes to the user's known_hosts. If an
-// agent key does authenticate, the remote command is a bare "exit".
-// ConnectTimeout plus the job timeout bound the run.
+// avoids both host-key prompts and writes to the user's known_hosts. Since
+// host keys aren't verified, PreferredAuthentications=none stops after
+// banner/kex — never offering agent keys or a username's worth of trust to
+// whatever answered. ConnectTimeout plus the job timeout bound the run.
 func sshTool(quote func([]string) string, host string, port int, goos string) Tool {
 	knownHosts := "/dev/null"
 	if goos == "windows" {
@@ -226,8 +227,9 @@ func sshTool(quote func([]string) string, host string, port int, goos string) To
 		"-o", "ConnectTimeout=3",
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "UserKnownHostsFile="+knownHosts,
+		"-o", "PreferredAuthentications=none",
 		"-p", strconv.Itoa(port),
-		host, "exit")
+		host)
 }
 
 // smtpTool builds a bounded SMTP STARTTLS check for the "c" slot (ProtoSMTP is

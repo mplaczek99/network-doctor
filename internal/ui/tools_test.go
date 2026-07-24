@@ -151,7 +151,8 @@ func TestToolsForProtocol(t *testing.T) {
 	wantSSH := []string{
 		"-v", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3",
 		"-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
-		"-p", "22", "example.com", "exit",
+		"-o", "PreferredAuthentications=none",
+		"-p", "22", "example.com",
 	}
 	if !slices.Equal(args, wantSSH) {
 		t.Errorf("ssh argv = %q, want %q", args, wantSSH)
