@@ -12,6 +12,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/heymaikol/network-doctor/internal/diagnostic"
+	"github.com/heymaikol/network-doctor/internal/textsafe"
 	"github.com/heymaikol/network-doctor/internal/ui"
 )
 
@@ -195,10 +196,10 @@ func buildReport(t *diagnostic.Target, probes []diagnostic.Probe, results map[di
 			ID:      string(p.ID),
 			Name:    p.Name,
 			Status:  r.Status.String(),
-			Detail:  r.Detail,
+			Detail:  textsafe.Clean(r.Detail),
 			Fix:     r.Fix,
 			Iface:   r.Iface,
-			Network: r.Network,
+			Network: textsafe.Clean(r.Network),
 		}
 		for _, ip := range r.Addrs {
 			c.Addrs = append(c.Addrs, ip.String())
@@ -212,7 +213,7 @@ func buildReport(t *diagnostic.Target, probes []diagnostic.Probe, results map[di
 		for _, a := range r.Attempts {
 			ra := reportAttempt{IP: a.IP.String(), Ms: a.Dur.Milliseconds()}
 			if a.Err != nil {
-				ra.Err = a.Err.Error()
+				ra.Err = textsafe.Clean(a.Err.Error())
 			}
 			c.Attempts = append(c.Attempts, ra)
 		}
