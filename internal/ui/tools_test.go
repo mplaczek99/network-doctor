@@ -269,8 +269,8 @@ func TestLANDiscoveryTool(t *testing.T) {
 	tool := lanDiscoveryTool(shellArgs, "192.168.12.0/24")
 	args, _, _ := tool.Build(nil)
 	want := []string{"--unprivileged", "-sn", "-T3", "--host-timeout", "5s", "-oG", "-", "192.168.12.0/24"}
-	if tool.Confirm || !slices.Equal(args, want) {
-		t.Fatalf("LAN scan = confirm %v, argv %q; want false, %q", tool.Confirm, args, want)
+	if !tool.Confirm || !slices.Equal(args, want) {
+		t.Fatalf("LAN scan = confirm %v, argv %q; want true, %q", tool.Confirm, args, want)
 	}
 }
 

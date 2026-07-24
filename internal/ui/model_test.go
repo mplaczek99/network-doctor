@@ -69,10 +69,18 @@ func TestNetworkMapToggle(t *testing.T) {
 		t.Fatalf("v hint must say network map: %s", help)
 	}
 
-	u, _ := m.Update(keyMsg("v"))
+	u, cmd := m.Update(keyMsg("v"))
 	nm := asModel(t, u)
+	if nm.confirmTool == nil || nm.confirmTool.Key != "v" || cmd != nil || nm.networkMap {
+		t.Fatal("v must open the confirm gate before sweeping the LAN")
+	}
+	if !strings.Contains(nm.View(), "-sn") {
+		t.Error("confirm gate must show the discovery command")
+	}
+	u, _ = nm.Update(keyMsg("y"))
+	nm = asModel(t, u)
 	if nm.confirmTool != nil || nm.cur.name != lanDiscoveryName || nm.cur.status == JobQueued || !nm.networkMap || nm.networkCIDR != "192.168.12.0/24" || !strings.Contains(nm.View(), "LAN scan") {
-		t.Fatalf("v must immediately run the LAN scan on the local /24:\n%s", nm.View())
+		t.Fatalf("y must run the LAN scan on the local /24:\n%s", nm.View())
 	}
 
 	nm.cur.active = nil

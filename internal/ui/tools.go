@@ -156,7 +156,7 @@ func nmapTool(quote func([]string) string, host string) Tool {
 
 func lanDiscoveryTool(quote func([]string) string, cidr string) Tool {
 	return Tool{
-		Key: "v", Name: lanDiscoveryName, Purpose: "discover LAN devices", Bin: "nmap", Timeout: 60 * time.Second,
+		Key: "v", Name: lanDiscoveryName, Purpose: "discover LAN devices", Bin: "nmap", Confirm: true, Timeout: 60 * time.Second,
 		Build: func(*diagnostic.Target) ([]string, []string, string) {
 			args := []string{"--unprivileged", "-sn", "-T3", "--host-timeout", "5s", "-oG", "-", cidr}
 			return args, nil, "nmap " + quote(args)

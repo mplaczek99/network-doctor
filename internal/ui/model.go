@@ -422,7 +422,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.setNotice("network discovery needs nmap", false)
 		}
 		m.networkCIDR = cidr
-		return m, m.launchTool(tool)
+		// Same confirm gate as nmap: a /24 sweep is an active scan too.
+		t := tool
+		m.confirmTool = &t
+		return m, nil
 	case "tab":
 		return m, m.switchJob()
 	case "up", "k":
